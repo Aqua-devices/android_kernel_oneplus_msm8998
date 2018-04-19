@@ -1,6 +1,6 @@
 #
 # Automatically generated file; DO NOT EDIT.
-# Linux/arm64 4.4.121 Kernel Configuration
+# Linux/arm64 4.4.125 Kernel Configuration
 #
 CONFIG_VENDOR_ONEPLUS=y
 CONFIG_ARM64=y
@@ -1147,8 +1147,8 @@ CONFIG_NFC=y
 #
 # CONFIG_NFC_PN533 is not set
 # CONFIG_NFC_SIM is not set
-CONFIG_NFC_PN544_OEM=y
 CONFIG_NFC_NQ=y
+CONFIG_NFC_PN5XX=y
 # CONFIG_LWTUNNEL is not set
 CONFIG_DST_CACHE=y
 CONFIG_IPC_ROUTER=y
