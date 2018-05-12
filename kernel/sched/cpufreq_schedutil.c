@@ -145,7 +145,7 @@ static void sugov_update_commit(struct sugov_policy *sg_policy, u64 time,
 
 	if (policy->fast_switch_enabled) {
 		next_freq = cpufreq_driver_fast_switch(policy, next_freq);
-		if (next_freq == CPUFREQ_ENTRY_INVALID)
+		if (!next_freq)
 			return;
 
 		policy->cur = next_freq;
@@ -219,7 +219,7 @@ static void sugov_get_util(unsigned long *util, unsigned long *max, u64 time)
 	rt = (rt * max_cap) >> SCHED_CAPACITY_SHIFT;
 
 	*util = boosted_cpu_util(cpu);
-	if (likely(use_pelt()))
+	if (use_pelt())
 		*util = *util + rt;
 
 	*util = min(*util, max_cap);
@@ -366,7 +366,7 @@ static unsigned int sugov_next_freq_shared(struct sugov_cpu *sg_cpu, u64 time)
 
 		j_util = j_sg_cpu->util;
 		j_max = j_sg_cpu->max;
-		if (j_util * max > j_max * util) {
+		if (j_util * max >= j_max * util) {
 			util = j_util;
 			max = j_max;
 		}
@@ -726,10 +726,9 @@ fail:
 
 stop_kthread:
 	sugov_kthread_stop(sg_policy);
-
-free_sg_policy:
 	mutex_unlock(&global_tunables_lock);
 
+free_sg_policy:
 	sugov_policy_free(sg_policy);
 
 disable_fast_switch:
@@ -784,6 +783,11 @@ static int sugov_start(struct cpufreq_policy *policy)
 		sg_cpu->sg_policy = sg_policy;
 		sg_cpu->flags = SCHED_CPUFREQ_DL;
 		sg_cpu->iowait_boost_max = policy->cpuinfo.max_freq;
+	}
+
+	for_each_cpu(cpu, policy->cpus) {
+		struct sugov_cpu *sg_cpu = &per_cpu(sugov_cpu, cpu);
+
 		cpufreq_add_update_util_hook(cpu, &sg_cpu->update_util,
 					     policy_is_shared(policy) ?
 							sugov_update_shared :
