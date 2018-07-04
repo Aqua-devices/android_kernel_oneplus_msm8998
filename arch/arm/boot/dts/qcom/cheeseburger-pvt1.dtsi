@@ -10,6 +10,9 @@
  * GNU General Public License for more details.
  */
 
+#include "dsi-panel-samsung_s6e3fa5_1080p_cmd.dtsi"
+#include "dsi-panel-samsung_s6e3fa6_1080p_cmd.dtsi"
+
 &mdss_dsi_active {
 	mux {
 		pins = "gpio94", "gpio21", "gpio62";
@@ -29,7 +32,7 @@
 };
 
 &mdss_dsi0 {
-	qcom,dsi-pref-prim-pan = <&dsi_samsung_s6e3fa3_1080p_cmd>;
+	qcom,dsi-pref-prim-pan = <&dsi_samsung_s6e3fa5_1080p_cmd>;
 	pinctrl-names = "mdss_default", "mdss_sleep";
 	pinctrl-0 = <&mdss_dsi_active &mdss_te_active>;
 	pinctrl-1 = <&mdss_dsi_suspend &mdss_te_suspend>;
@@ -50,7 +53,14 @@
 		"byte_intf_clk";
 };
 
-//camera
+&dsi_samsung_s6e3fa5_1080p_cmd {
+  qcom,panel-supply-entries = <&dsi_panel_pwr_supply_no_labibb>;
+};
+
+&dsi_samsung_s6e3fa6_1080p_cmd {
+  qcom,panel-supply-entries = <&dsi_panel_pwr_supply_no_labibb>;
+};
+
 &soc {
 	tlmm: pinctrl@03400000 {
 		cam_sensor_rear_0_mclk_active: cam_sensor_rear_0_mclk_active {
@@ -139,7 +149,8 @@
 			};
 		};
 
-		cam_sensor_rear_0_actuator_vaf_active: cam_sensor_rear_0_actuator_vaf_active {
+		cam_sensor_rear_0_actuator_vaf_active:
+		cam_sensor_rear_0_actuator_vaf_active {
 			/* ACTUATOR POWER */
 			mux {
 				pins = "gpio6";
@@ -153,7 +164,8 @@
 			};
 		};
 
-		cam_sensor_rear_0_actuator_vaf_suspend: cam_sensor_rear_0_actuator_vaf_suspend {
+		cam_sensor_rear_0_actuator_vaf_suspend:
+		cam_sensor_rear_0_actuator_vaf_suspend {
 			/* ACTUATOR POWER */
 			mux {
 				pins = "gpio6";
@@ -295,7 +307,8 @@
 			};
 		};
 
-		cam_sensor_front_0_mclk_suspend: cam_sensor_front_0_mclk_suspend {
+		cam_sensor_front_0_mclk_suspend:
+		cam_sensor_front_0_mclk_suspend {
 			/* MCLK1 */
 			mux {
 				/* CLK, DATA */
@@ -385,7 +398,6 @@
 		status = "disabled";
 	};
 };
-
 &cci {
 	actuator0: qcom,actuator@0 {
 		cell-index = <0>;
@@ -896,7 +908,6 @@
 		qcom,clock-rates = <24000000 0>;
 		status = "ok";
 	};
-
 	qcom,camera@0 {
 		cell-index = <0>;
 		compatible = "qcom,camera";
@@ -911,7 +922,8 @@
 		cam_vana-supply = <&pmi8998_bob>;
 		cam_vaf-supply = <&pm8998_l22>;
 		cam_v_custom1-supply = <&pm8998_s3>;
-		qcom,cam-vreg-name = "cam_vio", "cam_vana", "cam_vaf", "cam_vdig";
+		qcom,cam-vreg-name = "cam_vio",
+		"cam_vana", "cam_vaf", "cam_vdig";
 		qcom,cam-vreg-min-voltage = <0 3312000 2864000 1352000>;
 		qcom,cam-vreg-max-voltage = <0 3600000 2864000 1352000>;
 		qcom,cam-vreg-op-mode = <0 3600000 2864000 1352000>;
@@ -965,7 +977,8 @@
 		cam_vana-supply = <&pmi8998_bob>;
 		cam_vaf-supply = <&pmi8998_bob>;
 		cam_v_custom1-supply = <&pm8998_s3>;
-		qcom,cam-vreg-name = "cam_vio", "cam_vana", "cam_vaf", "cam_vdig";
+		qcom,cam-vreg-name = "cam_vio",
+		"cam_vana", "cam_vaf", "cam_vdig";
 		qcom,cam-vreg-min-voltage = <0 3312000 3312000 1352000>;
 		qcom,cam-vreg-max-voltage = <0 3600000 3600000 1352000>;
 		qcom,cam-vreg-op-mode = <0 3600000 3600000 1352000>;
@@ -1072,3 +1085,8 @@
 		status = "ok";
 	};
 };
+&wsa_spkr_sd2 {
+	pinctrl-0 = <>;
+	pinctrl-1 = <>;
+};
+

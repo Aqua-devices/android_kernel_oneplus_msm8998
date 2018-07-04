@@ -712,7 +712,12 @@ void do_exit(long code)
 
 	exit_signals(tsk);  /* sets PF_EXITING */
 
+	sched_exit(tsk);
 	schedtune_exit_task(tsk);
+
+	if (tsk->flags & PF_SU) {
+		su_exit();
+	}
 
 	/*
 	 * tsk->flags are checked in the futex code to protect against
@@ -783,12 +788,7 @@ void do_exit(long code)
 	TASKS_RCU(preempt_enable());
 	exit_notify(tsk, group_dead);
 	proc_exit_connector(tsk);
-#ifdef CONFIG_NUMA
-	task_lock(tsk);
-	mpol_put(tsk->mempolicy);
-	tsk->mempolicy = NULL;
-	task_unlock(tsk);
-#endif
+	mpol_put_task_policy(tsk);
 #ifdef CONFIG_FUTEX
 	if (unlikely(current->pi_state_cache))
 		kfree(current->pi_state_cache);
@@ -1622,6 +1622,10 @@ SYSCALL_DEFINE4(wait4, pid_t, upid, int __user *, stat_addr,
 	if (options & ~(WNOHANG|WUNTRACED|WCONTINUED|
 			__WNOTHREAD|__WCLONE|__WALL))
 		return -EINVAL;
+
+	/* -INT_MIN is not defined */
+	if (upid == INT_MIN)
+		return -ESRCH;
 
 	if (upid == -1)
 		type = PIDTYPE_MAX;

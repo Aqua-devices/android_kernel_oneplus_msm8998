@@ -371,24 +371,33 @@ static void adjust_jiffies(unsigned long val, struct cpufreq_freqs *ci)
  *********************************************************************/
 
 static DEFINE_PER_CPU(unsigned long, freq_scale) = SCHED_CAPACITY_SCALE;
-static DEFINE_PER_CPU(unsigned long, max_freq_cpu);
 static DEFINE_PER_CPU(unsigned long, max_freq_scale) = SCHED_CAPACITY_SCALE;
-static DEFINE_PER_CPU(unsigned long, min_freq_scale);
 
 static void
-scale_freq_capacity(const cpumask_t *cpus, unsigned long cur_freq,
-		    unsigned long max_freq)
+scale_freq_capacity(struct cpufreq_policy *policy, struct cpufreq_freqs *freqs)
 {
-	unsigned long scale = (cur_freq << SCHED_CAPACITY_SHIFT) / max_freq;
+	unsigned long cur = freqs ? freqs->new : policy->cur;
+	unsigned long scale = (cur << SCHED_CAPACITY_SHIFT) / policy->max;
+	struct cpufreq_cpuinfo *cpuinfo = &policy->cpuinfo;
 	int cpu;
 
-	for_each_cpu(cpu, cpus) {
-		per_cpu(freq_scale, cpu) = scale;
-		per_cpu(max_freq_cpu, cpu) = max_freq;
-	}
+	pr_debug("cpus %*pbl cur/cur max freq %lu/%u kHz freq scale %lu\n",
+		 cpumask_pr_args(policy->cpus), cur, policy->max, scale);
 
-	pr_debug("cpus %*pbl cur freq/max freq %lu/%lu kHz freq scale %lu\n",
-		 cpumask_pr_args(cpus), cur_freq, max_freq, scale);
+	for_each_cpu(cpu, policy->cpus)
+		per_cpu(freq_scale, cpu) = scale;
+
+	if (freqs)
+		return;
+
+	scale = (policy->max << SCHED_CAPACITY_SHIFT) / cpuinfo->max_freq;
+
+	pr_debug("cpus %*pbl cur max/max freq %u/%u kHz max freq scale %lu\n",
+		 cpumask_pr_args(policy->cpus), policy->max, cpuinfo->max_freq,
+		 scale);
+
+	for_each_cpu(cpu, policy->cpus)
+		per_cpu(max_freq_scale, cpu) = scale;
 }
 
 unsigned long cpufreq_scale_freq_capacity(struct sched_domain *sd, int cpu)
@@ -396,60 +405,9 @@ unsigned long cpufreq_scale_freq_capacity(struct sched_domain *sd, int cpu)
 	return per_cpu(freq_scale, cpu);
 }
 
-static void
-scale_max_freq_capacity(const cpumask_t *cpus, unsigned long policy_max_freq)
-{
-	unsigned long scale, max_freq;
-	int cpu = cpumask_first(cpus);
-
-	if (cpu >= nr_cpu_ids)
-		return;
-
-	max_freq = per_cpu(max_freq_cpu, cpu);
-
-	if (!max_freq)
-		return;
-
-	scale = (policy_max_freq << SCHED_CAPACITY_SHIFT) / max_freq;
-
-	for_each_cpu(cpu, cpus)
-		per_cpu(max_freq_scale, cpu) = scale;
-
-	pr_debug("cpus %*pbl policy max freq/max freq %lu/%lu kHz max freq scale %lu\n",
-		 cpumask_pr_args(cpus), policy_max_freq, max_freq, scale);
-}
-
-unsigned long cpufreq_scale_max_freq_capacity(struct sched_domain *sd, int cpu)
+unsigned long cpufreq_scale_max_freq_capacity(int cpu)
 {
 	return per_cpu(max_freq_scale, cpu);
-}
-
-static void
-scale_min_freq_capacity(const cpumask_t *cpus, unsigned long policy_min_freq)
-{
-	unsigned long scale, max_freq;
-	int cpu = cpumask_first(cpus);
-
-	if (cpu >= nr_cpu_ids)
-		return;
-
-	max_freq = per_cpu(max_freq_cpu, cpu);
-
-	if (!max_freq)
-		return;
-
-	scale = (policy_min_freq << SCHED_CAPACITY_SHIFT) / max_freq;
-
-	for_each_cpu(cpu, cpus)
-		per_cpu(min_freq_scale, cpu) = scale;
-
-	pr_debug("cpus %*pbl policy min freq/max freq %lu/%lu kHz min freq scale %lu\n",
-		 cpumask_pr_args(cpus), policy_min_freq, max_freq, scale);
-}
-
-unsigned long cpufreq_scale_min_freq_capacity(struct sched_domain *sd, int cpu)
-{
-	return per_cpu(min_freq_scale, cpu);
 }
 
 static void __cpufreq_notify_transition(struct cpufreq_policy *policy,
@@ -558,7 +516,7 @@ wait:
 
 	spin_unlock(&policy->transition_lock);
 
-	scale_freq_capacity(policy->cpus, freqs->new, policy->cpuinfo.max_freq);
+	scale_freq_capacity(policy, freqs);
 #ifdef CONFIG_SMP
 	for_each_cpu(cpu, policy->cpus)
 		trace_cpu_capacity(capacity_curr_of(cpu), cpu);
@@ -689,26 +647,8 @@ static int cpufreq_parse_governor(char *str_governor, unsigned int *policy,
 			ret = request_module("cpufreq_%s", str_governor);
 			mutex_lock(&cpufreq_governor_mutex);
 
-			/*
-			 * At this point, if the governor was found via module
-			 * search, it will load it. However, if it didn't, we
-			 * are just going to exit without doing anything to
-			 * the governor. Most of the time, this is totally
-			 * fine; the one scenario where it's not is when a ROM
-			 * has a boot script that requests a governor that
-			 * exists in the default kernel but not in this one.
-			 * This kernel (and nearly every other Android kernel)
-			 * has the performance governor as default for boot
-			 * performance which is then changed to another,
-			 * usually interactive. So, instead of just exiting if
-			 * the requested governor wasn't found, let's try
-			 * falling back to interactive before falling out.
-			 */
-
 			if (ret == 0)
 				t = find_governor(str_governor);
-			else
-				t = find_governor("interactive");
 		}
 
 		if (t != NULL) {
@@ -767,9 +707,6 @@ static ssize_t store_##file_name					\
 	struct cpufreq_policy new_policy;				\
 									\
 	memcpy(&new_policy, policy, sizeof(*policy));			\
-									\
-	new_policy.min = new_policy.user_policy.min;			\
-	new_policy.max = new_policy.user_policy.max;			\
 									\
 	ret = sscanf(buf, "%u", &new_policy.object);			\
 	if (ret != 1)							\
@@ -2302,8 +2239,7 @@ static int cpufreq_set_policy(struct cpufreq_policy *policy,
 	blocking_notifier_call_chain(&cpufreq_policy_notifier_list,
 			CPUFREQ_NOTIFY, new_policy);
 
-	scale_max_freq_capacity(policy->cpus, policy->max);
-	scale_min_freq_capacity(policy->cpus, policy->min);
+	scale_freq_capacity(new_policy, NULL);
 
 	policy->min = new_policy->min;
 	policy->max = new_policy->max;

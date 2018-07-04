@@ -855,7 +855,6 @@ struct ufs_hba {
 	/* Work Queues */
 	struct work_struct eh_work;
 	struct work_struct eeh_work;
-	struct work_struct rls_work;
 
 	/* HBA Errors */
 	u32 errors;
@@ -952,12 +951,9 @@ struct ufs_hba {
 
 	bool full_init_linereset;
 	struct pinctrl *pctrl;
-
-	int latency_hist_enabled;
-	struct io_latency_state io_lat_read;
-	struct io_latency_state io_lat_write;
-
-    bool restore_needed;
+	
+	int			latency_hist_enabled;
+	struct io_latency_state io_lat_s;
 };
 
 static inline void ufshcd_mark_shutdown_ongoing(struct ufs_hba *hba)
@@ -1161,6 +1157,8 @@ out:
 }
 
 int ufshcd_read_device_desc(struct ufs_hba *hba, u8 *buf, u32 size);
+
+int ufshcd_read_geometry_desc(struct ufs_hba *hba, u8 *buf, u32 size);
 
 static inline bool ufshcd_is_hs_mode(struct ufs_pa_layer_attr *pwr_info)
 {

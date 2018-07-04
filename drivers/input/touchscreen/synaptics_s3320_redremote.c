@@ -59,8 +59,10 @@ static ssize_t rmidev_sysfs_length_store(struct device *dev,
 static ssize_t rmidev_sysfs_attn_state_show(struct device *dev,
 		struct device_attribute *attr, char *buf);
 
-static int remote_rmi4_i2c_read(unsigned short addr, unsigned char *data, unsigned short length);
-static int remote_rmi4_i2c_write(unsigned short addr, unsigned char *data, unsigned short length);
+static int remote_rmi4_i2c_read(unsigned short addr,
+		unsigned char *data, unsigned short length);
+static int remote_rmi4_i2c_write(unsigned short addr,
+		unsigned char *data, unsigned short length);
 static int remote_rmi4_i2c_enable(bool enable);
 static int remote_rmi4_get_irq_gpio(void);
 static int remote_rmit_set_page(unsigned int address);
@@ -70,7 +72,8 @@ static int remote_rmit_put_page(void);
 static struct input_dev *remote_rmi4_get_input(void);
 static struct i2c_client *remote_rmi4_get_i2c_client(void);
 static void remote_rmi4_delay_work(struct work_struct *work);
-static struct remotepanel_data *remote_free_panel_data(struct remotepanel_data *pdata);
+static struct remotepanel_data *remote_free_panel_data
+		(struct remotepanel_data *pdata);
 
 
 #define MASK_8BIT 0xFF
@@ -575,7 +578,7 @@ static ssize_t rmidev_write(struct file *filp, const char __user *buf,
 	unsigned char tmpbuf[count + 1];
 	struct rmidev_data *dev_data = filp->private_data;
 
-	//printk("synap %s\n", __func__);
+	pr_err("synap %s\n", __func__);
 
 	if (IS_ERR(dev_data)) {
 		pr_err("%s: Pointer of char device data is invalid", __func__);
@@ -615,7 +618,7 @@ static int rmidev_create_attr(bool create)
 	unsigned char attr_count;
 	struct input_dev *input_dev = remote_rmi4_get_input();
 
-	//printk("synap %s\n", __func__);
+	pr_err("synap %s\n", __func__);
 	if (!create)
 		goto err_sysfs_attrs;
 
@@ -684,7 +687,7 @@ static int rmidev_open(struct inode *inp, struct file *filp)
 	int retval = 0;
 	struct rmidev_data *dev_data =
 			container_of(inp->i_cdev, struct rmidev_data, main_dev);
-	//printk("synap %s\n", __func__);
+	pr_err("synap %s\n", __func__);
 
 	if (!dev_data)
 		return -EACCES;
@@ -696,7 +699,7 @@ static int rmidev_open(struct inode *inp, struct file *filp)
 
 	mutex_lock(&(dev_data->file_mutex));
 	*(dev_data->pdata->enable_remote) = 1;
-	//remote_rmi4_i2c_enable(false);
+	/*remote_rmi4_i2c_enable(false);*/
 	dev_dbg(device_ptr,
 			"%s: Attention interrupt disabled\n",
 			__func__);
@@ -806,8 +809,8 @@ static void remote_rmi4_delay_work(struct work_struct *work)
 struct remotepanel_data *remote_alloc_panel_data(void)
 {
 	if (rmidev) {
-		//printk("%s:remote panel data has alloc already null\n",
-		//__func__);
+		pr_err("%s:remote panel data has alloc already null\n",
+		__func__);
 		return NULL;
 	}
 
@@ -817,15 +820,13 @@ struct remotepanel_data *remote_alloc_panel_data(void)
 static struct remotepanel_data *remote_free_panel_data
 		(struct remotepanel_data *pdata)
 {
-	if(pdata)
-		kfree(pdata);
 	pdata = NULL;
 	return NULL;
 }
 
 
 
-//int rmidev_init_device(void)
+/*int rmidev_init_device(void)*/
 int register_remote_device(struct remotepanel_data *pdata)
 {
 	int retval;
@@ -833,12 +834,12 @@ int register_remote_device(struct remotepanel_data *pdata)
 	struct rmidev_data *dev_data = NULL;
 
 	if (pdata == NULL) {
-		//printk("%s:pdata is null\n", __func__);
+		pr_err("%s:pdata is null\n", __func__);
 		return -ENOMEM;
 	}
 	if (rmidev) {
-		//printk("%s:remote device has register already null\n",
-		//__func__);
+		pr_err("%s:remote device has register already null\n",
+		__func__);
 		return -ENOMEM;
 	}
 	rmidev = kzalloc(sizeof(*rmidev), GFP_KERNEL);
@@ -915,7 +916,7 @@ err_rmidev:
 	return retval;
 }
 
-//void rmidev_remove_device(void)
+/*void rmidev_remove_device(void)*/
 void unregister_remote_device(void)
 {
 	struct rmidev_data *dev_data;

@@ -120,10 +120,6 @@ static int devfreq_update_status(struct devfreq *devfreq, unsigned long freq)
 
 	cur_time = jiffies;
 
-	/* Immediately exit if previous_freq is not initialized yet. */
-	if (!devfreq->previous_freq)
-		goto out;
-
 	prev_lev = devfreq_get_freq_level(devfreq, devfreq->previous_freq);
 	if (prev_lev < 0) {
 		ret = prev_lev;
@@ -386,11 +382,8 @@ void devfreq_interval_update(struct devfreq *devfreq, unsigned int *delay)
 		mutex_unlock(&devfreq->lock);
 		cancel_delayed_work_sync(&devfreq->work);
 		mutex_lock(&devfreq->lock);
-#ifdef CONFIG_VENDOR_ONEPLUS
+        /*Modified by liwei for avoiding BUG_ON issue*/
 		if (!devfreq->stop_polling && !delayed_work_pending(&devfreq->work))
-#else
-		if (!devfreq->stop_polling)
-#endif
 			queue_delayed_work(devfreq_wq, &devfreq->work,
 			      msecs_to_jiffies(devfreq->profile->polling_ms));
 	}
@@ -539,19 +532,17 @@ struct devfreq *devfreq_add_device(struct device *dev,
 	if (devfreq->governor)
 		err = devfreq->governor->event_handler(devfreq,
 					DEVFREQ_GOV_START, NULL);
+	mutex_unlock(&devfreq_list_lock);
 	if (err) {
 		dev_err(dev, "%s: Unable to start governor for the device\n",
 			__func__);
 		goto err_init;
 	}
-	mutex_unlock(&devfreq_list_lock);
 
 	return devfreq;
 
 err_init:
 	list_del(&devfreq->node);
-	mutex_unlock(&devfreq_list_lock);
-
 	device_unregister(&devfreq->dev);
 	kfree(devfreq);
 err_out:
@@ -1108,9 +1099,7 @@ static int __init devfreq_init(void)
 		return PTR_ERR(devfreq_class);
 	}
 
-	devfreq_wq = alloc_workqueue("devfreq_wq",
-			    WQ_HIGHPRI | WQ_UNBOUND | WQ_FREEZABLE |
-			    WQ_MEM_RECLAIM, 0);
+	devfreq_wq = create_freezable_workqueue("devfreq_wq");
 	if (!devfreq_wq) {
 		class_destroy(devfreq_class);
 		pr_err("%s: couldn't create workqueue\n", __FILE__);

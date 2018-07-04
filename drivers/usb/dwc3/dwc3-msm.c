@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -85,6 +85,7 @@ MODULE_PARM_DESC(cpu_to_affin, "affin usb irq to this cpu");
 #define CGCTL_REG		(QSCRATCH_REG_OFFSET + 0x28)
 #define PWR_EVNT_IRQ_STAT_REG    (QSCRATCH_REG_OFFSET + 0x58)
 #define PWR_EVNT_IRQ_MASK_REG    (QSCRATCH_REG_OFFSET + 0x5C)
+#define QSCRATCH_USB30_STS_REG	(QSCRATCH_REG_OFFSET + 0xF8)
 
 #define PWR_EVNT_POWERDOWN_IN_P3_MASK		BIT(2)
 #define PWR_EVNT_POWERDOWN_OUT_P3_MASK		BIT(3)
@@ -1594,7 +1595,7 @@ static int msm_dwc3_usbdev_notify(struct notifier_block *self,
 	}
 
 	mdwc->hc_died = true;
-	queue_delayed_work(system_freezable_wq, &mdwc->sm_work, 0);
+	schedule_delayed_work(&mdwc->sm_work, 0);
 	return 0;
 }
 
@@ -1938,8 +1939,19 @@ static int dwc3_msm_prepare_suspend(struct dwc3_msm *mdwc)
 			break;
 		usleep_range(20, 30);
 	}
-	if (!(reg & PWR_EVNT_LPM_IN_L2_MASK))
-		dev_err(mdwc->dev, "could not transition HS PHY to L2\n");
+	if (!(reg & PWR_EVNT_LPM_IN_L2_MASK)) {
+		dbg_event(0xFF, "PWR_EVNT_LPM",
+			dwc3_msm_read_reg(mdwc->base, PWR_EVNT_IRQ_STAT_REG));
+		dbg_event(0xFF, "QUSB_STS",
+			dwc3_msm_read_reg(mdwc->base, QSCRATCH_USB30_STS_REG));
+		/* Mark fatal error for host mode or USB bus suspend case */
+		if (mdwc->in_host_mode || (mdwc->vbus_active
+			&& mdwc->otg_state == OTG_STATE_B_SUSPEND)) {
+			queue_work(mdwc->dwc3_wq, &mdwc->resume_work);
+			dev_err(mdwc->dev, "could not transition HS PHY to L2\n");
+			return -EBUSY;
+		}
+	}
 
 	/* Clear L2 event bit */
 	dwc3_msm_write_reg(mdwc->base, PWR_EVNT_IRQ_STAT_REG,
@@ -2140,6 +2152,10 @@ static int dwc3_msm_suspend(struct dwc3_msm *mdwc)
 		dev_dbg(mdwc->dev, "defer suspend with %d(msecs)\n",
 					mdwc->lpm_to_suspend_delay);
 		pm_wakeup_event(mdwc->dev, mdwc->lpm_to_suspend_delay);
+#if 0
+	} else {
+		pm_relax(mdwc->dev);
+#endif
 	}
 
 	atomic_set(&dwc->in_lpm, 1);
@@ -2178,6 +2194,10 @@ static int dwc3_msm_resume(struct dwc3_msm *mdwc)
 		mutex_unlock(&mdwc->suspend_resume_mutex);
 		return 0;
 	}
+
+#if 0
+	pm_stay_awake(mdwc->dev);
+#endif
 
 	/* Enable bus voting */
 	if (mdwc->bus_perf_client) {
@@ -2347,7 +2367,7 @@ static void dwc3_ext_event_notify(struct dwc3_msm *mdwc)
 		clear_bit(B_SUSPEND, &mdwc->inputs);
 	}
 
-	queue_delayed_work(system_freezable_wq, &mdwc->sm_work, 0);
+	schedule_delayed_work(&mdwc->sm_work, 0);
 }
 
 static void dwc3_resume_work(struct work_struct *w)
@@ -3198,7 +3218,7 @@ static int dwc3_msm_probe(struct platform_device *pdev)
 		dwc3_msm_id_notifier(&mdwc->id_nb, true, mdwc->extcon_id);
 	else if (!pval.intval) {
 		/* USB cable is not connected */
-		queue_delayed_work(system_freezable_wq, &mdwc->sm_work, 0);
+		schedule_delayed_work(&mdwc->sm_work, 0);
 	} else {
 		if (pval.intval > 0)
 			dev_info(mdwc->dev, "charger detection in progress\n");
@@ -3399,8 +3419,8 @@ static void msm_dwc3_perf_vote_work(struct work_struct *w)
 	if (dwc->irq_cnt - dwc->last_irq_cnt >= PM_QOS_THRESHOLD)
 		in_perf_mode = true;
 
-	pr_debug("%s: in_perf_mode:%u, interrupts in last sample:%lu\n",
-		 __func__, in_perf_mode, (dwc->irq_cnt - dwc->last_irq_cnt));
+	/*pr_debug("%s: in_perf_mode:%u, interrupts in last sample:%lu\n",*/
+	/*__func__, in_perf_mode, (dwc->irq_cnt - last_irq_cnt));*/
 
 	dwc->last_irq_cnt = dwc->irq_cnt;
 	msm_dwc3_perf_vote_update(mdwc, in_perf_mode);
@@ -3446,6 +3466,7 @@ static int dwc3_otg_start_host(struct dwc3_msm *mdwc, int on)
 	if (on) {
 		dev_dbg(mdwc->dev, "%s: turn on host\n", __func__);
 
+		pm_runtime_get_sync(mdwc->dev);
 		mdwc->hs_phy->flags |= PHY_HOST_MODE;
 		if (dwc->maximum_speed == USB_SPEED_SUPER) {
 			mdwc->ss_phy->flags |= PHY_HOST_MODE;
@@ -3454,7 +3475,6 @@ static int dwc3_otg_start_host(struct dwc3_msm *mdwc, int on)
 		}
 
 		usb_phy_notify_connect(mdwc->hs_phy, USB_SPEED_HIGH);
-		pm_runtime_get_sync(mdwc->dev);
 		dbg_event(0xFF, "StrtHost gync",
 			atomic_read(&mdwc->dev->power.usage_count));
 		if (!IS_ERR(mdwc->vbus_reg))
@@ -3917,7 +3937,7 @@ static void dwc3_otg_sm_work(struct work_struct *w)
 	}
 
 	if (work)
-		queue_delayed_work(system_freezable_wq, &mdwc->sm_work, delay);
+		schedule_delayed_work(&mdwc->sm_work, delay);
 
 ret:
 	return;

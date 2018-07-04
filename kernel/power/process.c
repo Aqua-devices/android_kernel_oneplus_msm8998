@@ -18,13 +18,14 @@
 #include <linux/workqueue.h>
 #include <linux/kmod.h>
 #include <trace/events/power.h>
-#include <linux/cpuset.h>
 #include <linux/wakeup_reason.h>
+#include <linux/cpufreq.h>
+#include <linux/cpuset.h>
 
 /*
  * Timeout for stopping processes
  */
-unsigned int __read_mostly freeze_timeout_msecs = 2 * MSEC_PER_SEC;
+unsigned int __read_mostly freeze_timeout_msecs = 20 * MSEC_PER_SEC;
 
 static int try_to_freeze_tasks(bool user_only)
 {
@@ -191,36 +192,33 @@ int freeze_kernel_threads(void)
 	return error;
 }
 
-#ifdef CONFIG_VENDOR_ONEPLUS
-extern bool fp_irq_cnt;
-extern void c1_cpufreq_limit_queue(void);
-//huruihuan add for speed up resume
+/*huruihuan add for speed up resume*/
 void thaw_fingerprintd(void)
 {
-    struct task_struct *g, *p;
-    struct task_struct *curr = current;
-    pm_freezing = false;
-    pm_nosig_freezing = false;
-    if(fp_irq_cnt){
-        fp_irq_cnt = false;
-        c1_cpufreq_limit_queue();
-    }
-    read_lock(&tasklist_lock);
-    for_each_process_thread(g, p) {
-    /* No other threads should have PF_SUSPEND_TASK set */
-        WARN_ON((p != curr) && (p->flags & PF_SUSPEND_TASK));
-        if(!memcmp(p->comm, "fingerprintd", 13)){
-            __thaw_task(p);
-        }
-        if(!memcmp(p->comm, "fingerprintmsg", 15)){
-            __thaw_task(p);
-        }
-    }
-    read_unlock(&tasklist_lock);
-    pm_freezing = true;
-    pm_nosig_freezing = true;
-}
+	struct task_struct *g, *p;
+	struct task_struct *curr = current;
+
+	pm_freezing = false;
+	pm_nosig_freezing = false;
+	if (fp_irq_cnt) {
+		fp_irq_cnt = false;
+#ifdef CONFIG_CPU_FREQ_ONEPLUS_QOS
+		c1_cpufreq_limit_queue();
 #endif
+	}
+	read_lock(&tasklist_lock);
+	for_each_process_thread(g, p) {
+	/* No other threads should have PF_SUSPEND_TASK set */
+	WARN_ON((p != curr) && (p->flags & PF_SUSPEND_TASK));
+	if (!memcmp(p->comm, "fingerprintd", 13))
+		__thaw_task(p);
+	if (!memcmp(p->comm, "fingerprintmsg", 15))
+		__thaw_task(p);
+	}
+	read_unlock(&tasklist_lock);
+	pm_freezing = true;
+	pm_nosig_freezing = true;
+}
 
 void thaw_processes(void)
 {

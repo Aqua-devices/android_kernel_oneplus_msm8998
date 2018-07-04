@@ -531,7 +531,6 @@ struct mm_struct {
 #ifdef CONFIG_MSM_APP_SETTINGS
 	int app_setting;
 #endif
-
 	struct work_struct async_put_work;
 };
 

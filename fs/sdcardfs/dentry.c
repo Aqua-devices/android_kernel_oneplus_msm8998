@@ -65,7 +65,6 @@ static int sdcardfs_d_revalidate(struct dentry *dentry, unsigned int flags)
 	if ((lower_dentry->d_flags & DCACHE_OP_REVALIDATE)) {
 		err = lower_dentry->d_op->d_revalidate(lower_dentry, flags);
 		if (err == 0) {
-			d_drop(dentry);
 			goto out;
 		}
 	}
@@ -131,8 +130,6 @@ out:
 
 static void sdcardfs_d_release(struct dentry *dentry)
 {
-	if (!dentry || !dentry->d_fsdata)
-		return;
 	/* release and reset the lower paths */
 	if (has_graft_path(dentry))
 		sdcardfs_put_reset_orig_path(dentry);

@@ -175,9 +175,8 @@ enum {
 	RX_GAIN_OFFSET_0_DB,
 };
 
-#ifdef CONFIG_VENDOR_ONEPLUS
+/*zhiguang.su@MultiMedia.AudioDrv, 2014-4-14, add for l21 power*/
 extern struct regulator *bob_power;
-#endif
 
 extern void *tasha_get_afe_config(struct snd_soc_codec *codec,
 				  enum afe_config_type config_type);

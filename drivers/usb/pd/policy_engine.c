@@ -309,6 +309,8 @@ struct usbpd {
 	struct device		dev;
 	struct workqueue_struct	*wq;
 	struct work_struct	sm_work;
+/*2018/03/19 handle xiaomi typec headset dsp crash issue*/
+	struct delayed_work	vbus_work;
 	struct hrtimer		timer;
 	bool			sm_queued;
 
@@ -615,10 +617,8 @@ static void kick_sm(struct usbpd *pd, int ms)
 static void phy_sig_received(struct usbpd *pd, enum pd_sig_type sig)
 {
 	union power_supply_propval val = {1};
-#ifdef CONFIG_VENDOR_ONEPLUS
 	usbpd_info(&pd->dev, "%s return by oem\n", __func__);
 	return;
-#endif
 
 	if (sig != HARD_RESET_SIG) {
 		usbpd_err(&pd->dev, "invalid signal (%d) received\n", sig);
@@ -764,7 +764,6 @@ static void usbpd_set_state(struct usbpd *pd, enum usbpd_state next_state)
 			 */
 		}
 
-		dual_role_instance_changed(pd->dual_role);
 
 		/* Set CC back to DRP toggle for the next disconnect */
 		val.intval = POWER_SUPPLY_TYPEC_PR_DUAL;
@@ -925,11 +924,12 @@ static void usbpd_set_state(struct usbpd *pd, enum usbpd_state next_state)
 			if (pd->psy_type == POWER_SUPPLY_TYPE_USB ||
 				pd->psy_type == POWER_SUPPLY_TYPE_USB_CDP ||
 				pd->psy_type == POWER_SUPPLY_TYPE_USB_FLOAT ||
-				usb_compliance_mode)
+				usb_compliance_mode){
+				usbpd_err(&pd->dev, "sink start:pd start peripheral\n");
 				start_usb_peripheral(pd);
+			}
 		}
 
-		dual_role_instance_changed(pd->dual_role);
 
 		ret = power_supply_get_property(pd->usb_psy,
 				POWER_SUPPLY_PROP_PD_ALLOWED, &val);
@@ -1026,6 +1026,7 @@ static void usbpd_set_state(struct usbpd *pd, enum usbpd_state next_state)
 
 	case PE_SNK_TRANSITION_TO_DEFAULT:
 		if (pd->current_dr != DR_UFP) {
+			usbpd_err(&pd->dev, "to default:pd start peripheral\n");
 			stop_usb_host(pd);
 			start_usb_peripheral(pd);
 			pd->current_dr = DR_UFP;
@@ -1725,50 +1726,25 @@ static void usbpd_sm(struct work_struct *w)
 		break;
 
 	case PE_SRC_SEND_CAPABILITIES:
-		ret = pd_send_msg(pd, MSG_SOURCE_CAPABILITIES, default_src_caps,
-				ARRAY_SIZE(default_src_caps), SOP_MSG);
+		ret = pd_send_msg(pd, MSG_PS_RDY, NULL, 0, SOP_MSG);
 		if (ret) {
 			pd->caps_count++;
 
-#ifdef CONFIG_VENDOR_ONEPLUS
+/* david.liu@bsp, 201710523 Fix C2C swap failed with Pixel */
 			if (pd->caps_count < 10 && pd->current_dr == DR_DFP) {
 				start_usb_host(pd, true);
 			} else if (pd->caps_count >= 10) {
 				usbpd_set_state(pd, PE_SRC_DISABLED);
 				break;
 			}
-#else
-			if (pd->caps_count == 10 && pd->current_dr == DR_DFP) {
-				/* Likely not PD-capable, start host now */
-				start_usb_host(pd, true);
-			} else if (pd->caps_count >= PD_CAPS_COUNT) {
-				usbpd_dbg(&pd->dev, "Src CapsCounter exceeded, disabling PD\n");
-				usbpd_set_state(pd, PE_SRC_DISABLED);
-
-				val.intval = 0;
-				power_supply_set_property(pd->usb_psy,
-						POWER_SUPPLY_PROP_PD_ACTIVE,
-						&val);
-				break;
-			}
-#endif
-
 			kick_sm(pd, SRC_CAP_TIME);
 			break;
 		}
 
-		/* transmit was successful if GoodCRC was received */
-		pd->caps_count = 0;
-		pd->hard_reset_count = 0;
-		pd->pd_connected = true; /* we know peer is PD capable */
-
-		/* wait for REQUEST */
-		pd->current_state = PE_SRC_SEND_CAPABILITIES_WAIT;
-		kick_sm(pd, SENDER_RESPONSE_TIME);
-
-		val.intval = 1;
-		power_supply_set_property(pd->usb_psy,
-				POWER_SUPPLY_PROP_PD_ACTIVE, &val);
+/* david.liu@bsp, 201710523 Fix C2C swap failed with Pixel */
+		usbpd_info(&pd->dev, "Start host snd msg ok\n");
+		if (pd->current_dr == DR_DFP)
+			start_usb_host(pd, true);
 		break;
 
 	case PE_SRC_SEND_CAPABILITIES_WAIT:
@@ -2178,6 +2154,7 @@ static void usbpd_sm(struct work_struct *w)
 		break;
 
 	case PE_SNK_TRANSITION_TO_DEFAULT:
+		usbpd_err(&pd->dev, "default: sink startup\n");
 		usbpd_set_state(pd, PE_SNK_STARTUP);
 		break;
 
@@ -2433,11 +2410,7 @@ static int psy_changed(struct notifier_block *nb, unsigned long evt, void *ptr)
 	pd->vbus_present = val.intval;
 
 	ret = power_supply_get_property(pd->usb_psy,
-#ifdef CONFIG_VENDOR_ONEPLUS
-			POWER_SUPPLY_PROP_TYPE, &val);
-#else
 			POWER_SUPPLY_PROP_REAL_TYPE, &val);
-#endif
 	if (ret) {
 		usbpd_err(&pd->dev, "Unable to read USB TYPE: %d\n", ret);
 		return ret;
@@ -2463,20 +2436,19 @@ static int psy_changed(struct notifier_block *nb, unsigned long evt, void *ptr)
 	if (pd->typec_mode == typec_mode)
 		return 0;
 
-#ifdef CONFIG_VENDOR_ONEPLUS
 	if ((typec_mode == POWER_SUPPLY_TYPEC_SOURCE_DEFAULT) ||
 		(typec_mode == POWER_SUPPLY_TYPEC_SOURCE_MEDIUM) ||
 		(typec_mode == POWER_SUPPLY_TYPEC_SOURCE_HIGH)) {
 		if (pd->psy_type == POWER_SUPPLY_TYPE_UNKNOWN) {
-			usbpd_err(&pd->dev, "typec_mode:%d, psy_type:%d\n", typec_mode, pd->psy_type);
+			usbpd_err(&pd->dev, "typec_mode:%d, psy_type:%d\n",
+				typec_mode, pd->psy_type);
 			return 0;
 		}
 	}
-#endif
 
 	pd->typec_mode = typec_mode;
 
-	usbpd_dbg(&pd->dev, "typec mode:%d present:%d type:%d orientation:%d\n",
+	usbpd_err(&pd->dev, "typec mode:%d present:%d type:%d orientation:%d\n",
 			typec_mode, pd->vbus_present, pd->psy_type,
 			usbpd_get_plug_orientation(pd));
 
@@ -2604,11 +2576,7 @@ static int usbpd_dr_set_property(struct dual_role_phy_instance *dual_role,
 {
 	struct usbpd *pd = dual_role_get_drvdata(dual_role);
 	bool do_swap = false;
-#ifdef CONFIG_VENDOR_ONEPLUS
-	int wait_count = 20;
-#else
 	int wait_count = 5;
-#endif
 
 	if (!pd)
 		return -ENODEV;
@@ -3161,6 +3129,93 @@ static ssize_t hard_reset_store(struct device *dev,
 }
 static DEVICE_ATTR_WO(hard_reset);
 
+/*2018/03/19 handle xiaomi typec headset dsp crash issue*/
+struct usbpd *pd_lobal;
+unsigned int pd_vbus_ctrl;
+
+module_param(pd_vbus_ctrl, uint, S_IRUGO | S_IWUSR);
+MODULE_PARM_DESC(pd_vbus_ctrl, "PD VBUS CONTROL");
+
+
+void pd_vbus_reset(struct usbpd *pd)
+{
+	if (!pd) {
+		pr_err("pd_vbus_reset, pd is null\n");
+		return;
+	}
+	if (pd->vbus_enabled) {
+		pr_err("pd_vbus_reset execute\n");
+		regulator_disable(pd->vbus);
+		pd->vbus_enabled = false;
+		if (!pd_vbus_ctrl)
+			pd_vbus_ctrl = 5000;
+		msleep(pd_vbus_ctrl);
+		enable_vbus(pd);
+	} else {
+		pr_err("pd_vbus is not enabled yet\n");
+	}
+}
+
+/* Handles VBUS off on */
+void usbpd_vbus_sm(struct work_struct *w)
+{
+	struct usbpd *pd = pd_lobal;
+	/* container_of(w, struct usbpd, vbus_work) */
+
+	pr_err("usbpd_vbus_sm handle state %s, vbus %d\n",
+			usbpd_state_strings[pd->current_state],
+			pd->vbus_enabled);
+
+	/* to be done, pd->sm_queued = false; */
+	pd_vbus_reset(pd);
+}
+
+void kick_usbpd_vbus_sm(void)
+{
+	pm_stay_awake(&pd_lobal->dev);
+
+	/* to be done pd_lobal->sm_queued = true;*/
+	pr_err("kick_usbpd_vbus_sm handle state %s, vbus %d\n",
+			usbpd_state_strings[pd_lobal->current_state],
+			pd_lobal->vbus_enabled);
+
+	queue_delayed_work(pd_lobal->wq, &(pd_lobal->vbus_work),
+		msecs_to_jiffies(400));
+}
+
+static ssize_t pd_vbus_show(struct device *dev, struct device_attribute *attr,
+		char *buf)
+{
+	struct usbpd *pd = dev_get_drvdata(dev);
+
+	pr_err("pd_vbus_show handle state %s, vbus %d\n",
+			usbpd_state_strings[pd_lobal->current_state],
+			pd_lobal->vbus_enabled);
+
+	pd_vbus_reset(pd);
+
+	return 0;
+}
+
+
+static ssize_t pd_vbus_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t size)
+{
+	int val = 0;
+
+	if (sscanf(buf, "%d\n", &val) != 0)
+		pr_err("pd_vbus_store input err\n");
+
+	pr_err("pd_vbus_store handle state %s, vbus %d,val %d\n",
+			usbpd_state_strings[pd_lobal->current_state],
+			pd_lobal->vbus_enabled, val);
+	kick_usbpd_vbus_sm();
+
+	return size;
+}
+
+static DEVICE_ATTR_RW(pd_vbus);
+
 static struct attribute *usbpd_attrs[] = {
 	&dev_attr_contract.attr,
 	&dev_attr_initial_pr.attr,
@@ -3180,6 +3235,8 @@ static struct attribute *usbpd_attrs[] = {
 	&dev_attr_rdo.attr,
 	&dev_attr_rdo_h.attr,
 	&dev_attr_hard_reset.attr,
+/*2018/03/19 handle xiaomi typec headset dsp crash issue*/
+	&dev_attr_pd_vbus.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(usbpd);
@@ -3294,6 +3351,8 @@ struct usbpd *usbpd_create(struct device *parent)
 		goto del_pd;
 	}
 	INIT_WORK(&pd->sm_work, usbpd_sm);
+/*2017/03/19 handle xiaomi typec headset dsp crash issue*/
+	INIT_DELAYED_WORK(&pd->vbus_work, usbpd_vbus_sm);
 	hrtimer_init(&pd->timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	pd->timer.function = pd_timeout;
 	mutex_init(&pd->swap_lock);
@@ -3418,6 +3477,9 @@ struct usbpd *usbpd_create(struct device *parent)
 
 	/* force read initial power_supply values */
 	psy_changed(&pd->psy_nb, PSY_EVENT_PROP_CHANGED, pd->usb_psy);
+
+/*2018/03/19 handle xiaomi typec headset dsp crash issue*/
+	pd_lobal = pd;
 
 	return pd;
 

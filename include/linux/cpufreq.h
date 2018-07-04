@@ -119,18 +119,7 @@ struct cpufreq_policy {
 	bool                    fast_switch_possible;
 	bool                    fast_switch_enabled;
 
-	/*
-	 * Preferred average time interval between consecutive invocations of
-	 * the driver to set the frequency for this policy.  To be set by the
-	 * scaling driver (0, which is the default, means no preference).
-	 */
-	unsigned int		up_transition_delay_us;
-	unsigned int		down_transition_delay_us;
-
-	/* Boost switch for tasks with p->in_iowait set */
-	bool iowait_boost_enable;
-
-	 /* Cached frequency lookup from cpufreq_driver_resolve_freq. */
+	/* Cached frequency lookup from cpufreq_driver_resolve_freq. */
 	unsigned int cached_target_freq;
 	int cached_resolved_idx;
 
@@ -157,10 +146,10 @@ struct cpufreq_policy {
 struct cpufreq_policy *cpufreq_cpu_get_raw(unsigned int cpu);
 struct cpufreq_policy *cpufreq_cpu_get(unsigned int cpu);
 void cpufreq_cpu_put(struct cpufreq_policy *policy);
-#ifdef CONFIG_VENDOR_ONEPLUS
 extern unsigned int cluster1_first_cpu;
+extern bool fp_irq_cnt;
 extern void c0_cpufreq_limit_queue(void);
-#endif
+extern void c1_cpufreq_limit_queue(void);
 #else
 static inline struct cpufreq_policy *cpufreq_cpu_get_raw(unsigned int cpu)
 {
@@ -552,9 +541,6 @@ extern struct cpufreq_governor cpufreq_gov_sched;
 #elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL)
 extern struct cpufreq_governor cpufreq_gov_schedutil;
 #define CPUFREQ_DEFAULT_GOVERNOR	(&cpufreq_gov_schedutil)
-#elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_BLU_ACTIVE)
-extern struct cpufreq_governor cpufreq_gov_blu_active;
-#define CPUFREQ_DEFAULT_GOVERNOR	(&cpufreq_gov_blu_active)
 #endif
 
 static inline void cpufreq_policy_apply_limits(struct cpufreq_policy *policy)
@@ -718,6 +704,5 @@ int cpufreq_generic_init(struct cpufreq_policy *policy,
 
 struct sched_domain;
 unsigned long cpufreq_scale_freq_capacity(struct sched_domain *sd, int cpu);
-unsigned long cpufreq_scale_max_freq_capacity(struct sched_domain *sd, int cpu);
-unsigned long cpufreq_scale_min_freq_capacity(struct sched_domain *sd, int cpu);
+unsigned long cpufreq_scale_max_freq_capacity(int cpu);
 #endif /* _LINUX_CPUFREQ_H */

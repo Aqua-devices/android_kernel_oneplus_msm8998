@@ -1473,6 +1473,10 @@ static void gsi_rndis_ipa_reset_trigger(struct gsi_data_port *d_port)
 	spin_unlock_irqrestore(&rndis->d_port.lock, flags);
 }
 
+
+
+
+
 void gsi_rndis_flow_ctrl_enable(bool enable, struct rndis_params *param)
 {
 	struct f_gsi *rndis = param->v;
@@ -3193,6 +3197,10 @@ static int gsi_set_inst_name(struct usb_function_instance *fi,
 		return -EBUSY;
 	}
 	mutex_unlock(&inst_status[prot_id].gsi_lock);
+
+	if (prot_id == IPA_USB_RNDIS)
+		config_group_init_type_name(&opts->func_inst.group, "",
+					    &gsi_func_rndis_type);
 
 	gsi = gsi_function_init(prot_id);
 	if (IS_ERR(gsi))

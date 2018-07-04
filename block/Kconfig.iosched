@@ -15,7 +15,7 @@ config IOSCHED_NOOP
 config IOSCHED_TEST
 	tristate "Test I/O scheduler"
 	depends on DEBUG_FS
-	default n
+	default m
 	---help---
 	  The test I/O scheduler is a duplicate of the noop scheduler with
 	  addition of test utlity.
@@ -31,10 +31,6 @@ config IOSCHED_DEADLINE
 	  CSCAN service with FIFO expiration of requests, switching to
 	  a new point in the service tree and doing a batch of IO from there
 	  in case of expiry.
-
-config IOSCHED_MAPLE
-	tristate "Maple I/O scheduler"
-	default y
 
 config IOSCHED_CFQ
 	tristate "CFQ I/O scheduler"
@@ -53,13 +49,6 @@ config CFQ_GROUP_IOSCHED
 	default n
 	---help---
 	  Enable group IO scheduling in CFQ.
-
-config IOSCHED_ZEN
-	tristate "Zen I/O scheduler"
-	default y
-	---help---
-	FCFS, dispatches are back-inserted, deadlines ensure fairness.
-        Should work best with devices where there is no travel delay.
 
 config IOSCHED_BFQ
 	tristate "BFQ I/O scheduler"
@@ -103,12 +92,6 @@ choice
 		  any workload. It also tries to guarantee low latency to
 		  interactive and soft real-time applications.
 
-	config DEFAULT_MAPLE
-		bool "Maple" if IOSCHED_MAPLE=y
-
-	config DEFAULT_ZEN
-		bool "Zen" if IOSCHED_ZEN=y
-
 	config DEFAULT_NOOP
 		bool "No-op"
 
@@ -116,12 +99,10 @@ endchoice
 
 config DEFAULT_IOSCHED
 	string
-	default "cfq" if DEFAULT_CFQ
 	default "deadline" if DEFAULT_DEADLINE
+	default "cfq" if DEFAULT_CFQ
 	default "bfq" if DEFAULT_BFQ
-	default "maple" if DEFAULT_MAPLE
 	default "noop" if DEFAULT_NOOP
-	default "zen" if DEFAULT_ZEN
 
 endmenu
 

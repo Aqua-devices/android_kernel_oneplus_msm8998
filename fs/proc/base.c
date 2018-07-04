@@ -94,6 +94,8 @@
 #include "internal.h"
 #include "fd.h"
 
+#include "../../lib/kstrtox.h"
+
 /* NOTE:
  *	Implementing inode permission operations in /proc is almost
  *	certainly an error.  Permission checks need to happen during
@@ -953,6 +955,7 @@ static ssize_t environ_read(struct file *file, char __user *buf,
 	unsigned long src = *ppos;
 	int ret = 0;
 	struct mm_struct *mm = file->private_data;
+	unsigned long env_start, env_end;
 
 	/* Ensure the process spawned far enough to have an environment. */
 	if (!mm || !mm->env_end)
@@ -965,19 +968,25 @@ static ssize_t environ_read(struct file *file, char __user *buf,
 	ret = 0;
 	if (!atomic_inc_not_zero(&mm->mm_users))
 		goto free;
+
+	down_read(&mm->mmap_sem);
+	env_start = mm->env_start;
+	env_end = mm->env_end;
+	up_read(&mm->mmap_sem);
+
 	while (count > 0) {
 		size_t this_len, max_len;
 		int retval;
 
-		if (src >= (mm->env_end - mm->env_start))
+		if (src >= (env_end - env_start))
 			break;
 
-		this_len = mm->env_end - (mm->env_start + src);
+		this_len = env_end - (env_start + src);
 
 		max_len = min_t(size_t, PAGE_SIZE, count);
 		this_len = min(max_len, this_len);
 
-		retval = access_remote_vm(mm, (mm->env_start + src),
+		retval = access_remote_vm(mm, (env_start + src),
 			page, this_len, 0);
 
 		if (retval <= 0) {
@@ -1081,15 +1090,9 @@ static ssize_t oom_adj_write(struct file *file, const char __user *buf,
 		goto out;
 	}
 
-	task_lock(task);
-	if (!task->mm) {
-		err = -EINVAL;
-		goto err_task_lock;
-	}
-
 	if (!lock_task_sighand(task, &flags)) {
 		err = -ESRCH;
-		goto err_task_lock;
+		goto err_put_task;
 	}
 
 	/*
@@ -1119,8 +1122,7 @@ static ssize_t oom_adj_write(struct file *file, const char __user *buf,
 	trace_oom_score_adj_update(task);
 err_sighand:
 	unlock_task_sighand(task, &flags);
-err_task_lock:
-	task_unlock(task);
+err_put_task:
 	put_task_struct(task);
 out:
 	return err < 0 ? err : count;
@@ -1184,15 +1186,9 @@ static ssize_t oom_score_adj_write(struct file *file, const char __user *buf,
 		goto out;
 	}
 
-	task_lock(task);
-	if (!task->mm) {
-		err = -EINVAL;
-		goto err_task_lock;
-	}
-
 	if (!lock_task_sighand(task, &flags)) {
 		err = -ESRCH;
-		goto err_task_lock;
+		goto err_put_task;
 	}
 
 	if ((short)oom_score_adj < task->signal->oom_score_adj_min &&
@@ -1208,8 +1204,7 @@ static ssize_t oom_score_adj_write(struct file *file, const char __user *buf,
 
 err_sighand:
 	unlock_task_sighand(task, &flags);
-err_task_lock:
-	task_unlock(task);
+err_put_task:
 	put_task_struct(task);
 out:
 	return err < 0 ? err : count;
@@ -1414,6 +1409,204 @@ static const struct file_operations proc_pid_sched_operations = {
 };
 
 #endif
+
+/*
+ * Print out various scheduling related per-task fields:
+ */
+
+#ifdef CONFIG_SMP
+
+static int sched_wake_up_idle_show(struct seq_file *m, void *v)
+{
+	struct inode *inode = m->private;
+	struct task_struct *p;
+
+	p = get_proc_task(inode);
+	if (!p)
+		return -ESRCH;
+
+	seq_printf(m, "%d\n", sched_get_wake_up_idle(p));
+
+	put_task_struct(p);
+
+	return 0;
+}
+
+static ssize_t
+sched_wake_up_idle_write(struct file *file, const char __user *buf,
+	    size_t count, loff_t *offset)
+{
+	struct inode *inode = file_inode(file);
+	struct task_struct *p;
+	char buffer[PROC_NUMBUF];
+	int wake_up_idle, err;
+
+	memset(buffer, 0, sizeof(buffer));
+	if (count > sizeof(buffer) - 1)
+		count = sizeof(buffer) - 1;
+	if (copy_from_user(buffer, buf, count)) {
+		err = -EFAULT;
+		goto out;
+	}
+
+	err = kstrtoint(strstrip(buffer), 0, &wake_up_idle);
+	if (err)
+		goto out;
+
+	p = get_proc_task(inode);
+	if (!p)
+		return -ESRCH;
+
+	err = sched_set_wake_up_idle(p, wake_up_idle);
+
+	put_task_struct(p);
+
+out:
+	return err < 0 ? err : count;
+}
+
+static int sched_wake_up_idle_open(struct inode *inode, struct file *filp)
+{
+	return single_open(filp, sched_wake_up_idle_show, inode);
+}
+
+static const struct file_operations proc_pid_sched_wake_up_idle_operations = {
+	.open		= sched_wake_up_idle_open,
+	.read		= seq_read,
+	.write		= sched_wake_up_idle_write,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+
+#endif	/* CONFIG_SMP */
+
+#ifdef CONFIG_SCHED_HMP
+
+static int sched_init_task_load_show(struct seq_file *m, void *v)
+{
+	struct inode *inode = m->private;
+	struct task_struct *p;
+
+	p = get_proc_task(inode);
+	if (!p)
+		return -ESRCH;
+
+	seq_printf(m, "%d\n", sched_get_init_task_load(p));
+
+	put_task_struct(p);
+
+	return 0;
+}
+
+static ssize_t
+sched_init_task_load_write(struct file *file, const char __user *buf,
+	    size_t count, loff_t *offset)
+{
+	struct inode *inode = file_inode(file);
+	struct task_struct *p;
+	char buffer[PROC_NUMBUF];
+	int init_task_load, err;
+
+	memset(buffer, 0, sizeof(buffer));
+	if (count > sizeof(buffer) - 1)
+		count = sizeof(buffer) - 1;
+	if (copy_from_user(buffer, buf, count)) {
+		err = -EFAULT;
+		goto out;
+	}
+
+	err = kstrtoint(strstrip(buffer), 0, &init_task_load);
+	if (err)
+		goto out;
+
+	p = get_proc_task(inode);
+	if (!p)
+		return -ESRCH;
+
+	err = sched_set_init_task_load(p, init_task_load);
+
+	put_task_struct(p);
+
+out:
+	return err < 0 ? err : count;
+}
+
+static int sched_init_task_load_open(struct inode *inode, struct file *filp)
+{
+	return single_open(filp, sched_init_task_load_show, inode);
+}
+
+static const struct file_operations proc_pid_sched_init_task_load_operations = {
+	.open		= sched_init_task_load_open,
+	.read		= seq_read,
+	.write		= sched_init_task_load_write,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+
+static int sched_group_id_show(struct seq_file *m, void *v)
+{
+	struct inode *inode = m->private;
+	struct task_struct *p;
+
+	p = get_proc_task(inode);
+	if (!p)
+		return -ESRCH;
+
+	seq_printf(m, "%d\n", sched_get_group_id(p));
+
+	put_task_struct(p);
+
+	return 0;
+}
+
+static ssize_t
+sched_group_id_write(struct file *file, const char __user *buf,
+	    size_t count, loff_t *offset)
+{
+	struct inode *inode = file_inode(file);
+	struct task_struct *p;
+	char buffer[PROC_NUMBUF];
+	int group_id, err;
+
+	memset(buffer, 0, sizeof(buffer));
+	if (count > sizeof(buffer) - 1)
+		count = sizeof(buffer) - 1;
+	if (copy_from_user(buffer, buf, count)) {
+		err = -EFAULT;
+		goto out;
+	}
+
+	err = kstrtoint(strstrip(buffer), 0, &group_id);
+	if (err)
+		goto out;
+
+	p = get_proc_task(inode);
+	if (!p)
+		return -ESRCH;
+
+	err = sched_set_group_id(p, group_id);
+
+	put_task_struct(p);
+
+out:
+	return err < 0 ? err : count;
+}
+
+static int sched_group_id_open(struct inode *inode, struct file *filp)
+{
+	return single_open(filp, sched_group_id_show, inode);
+}
+
+static const struct file_operations proc_pid_sched_group_id_operations = {
+	.open		= sched_group_id_open,
+	.read		= seq_read,
+	.write		= sched_group_id_write,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+
+#endif	/* CONFIG_SCHED_HMP */
 
 #ifdef CONFIG_SCHED_AUTOGROUP
 /*
@@ -1834,8 +2027,33 @@ end_instantiate:
 static int dname_to_vma_addr(struct dentry *dentry,
 			     unsigned long *start, unsigned long *end)
 {
-	if (sscanf(dentry->d_name.name, "%lx-%lx", start, end) != 2)
+	const char *str = dentry->d_name.name;
+	unsigned long long sval, eval;
+	unsigned int len;
+
+	len = _parse_integer(str, 16, &sval);
+	if (len & KSTRTOX_OVERFLOW)
 		return -EINVAL;
+	if (sval != (unsigned long)sval)
+		return -EINVAL;
+	str += len;
+
+	if (*str != '-')
+		return -EINVAL;
+	str++;
+
+	len = _parse_integer(str, 16, &eval);
+	if (len & KSTRTOX_OVERFLOW)
+		return -EINVAL;
+	if (eval != (unsigned long)eval)
+		return -EINVAL;
+	str += len;
+
+	if (*str != '\0')
+		return -EINVAL;
+
+	*start = sval;
+	*end = eval;
 
 	return 0;
 }
@@ -2830,6 +3048,13 @@ static const struct pid_entry tgid_base_stuff[] = {
 	ONE("status",     S_IRUGO, proc_pid_status),
 	ONE("personality", S_IRUSR, proc_pid_personality),
 	ONE("limits",	  S_IRUGO, proc_pid_limits),
+#ifdef CONFIG_SMP
+	REG("sched_wake_up_idle",      S_IRUGO|S_IWUSR, proc_pid_sched_wake_up_idle_operations),
+#endif
+#ifdef CONFIG_SCHED_HMP
+	REG("sched_init_task_load",      S_IRUGO|S_IWUSR, proc_pid_sched_init_task_load_operations),
+	REG("sched_group_id",      S_IRUGO|S_IWUGO, proc_pid_sched_group_id_operations),
+#endif
 #ifdef CONFIG_SCHED_DEBUG
 	REG("sched",      S_IRUGO|S_IWUSR, proc_pid_sched_operations),
 #endif
@@ -2885,7 +3110,7 @@ static const struct pid_entry tgid_base_stuff[] = {
 #endif
 	ONE("oom_score",  S_IRUGO, proc_oom_score),
 	REG("oom_adj",    S_IRUSR, proc_oom_adj_operations),
-	REG("oom_score_adj", S_IRUSR, proc_oom_score_adj_operations),
+	REG("oom_score_adj", S_IRUGO, proc_oom_score_adj_operations),
 #ifdef CONFIG_AUDITSYSCALL
 	REG("loginuid",   S_IWUSR|S_IRUGO, proc_loginuid_operations),
 	REG("sessionid",  S_IRUGO, proc_sessionid_operations),
@@ -3175,7 +3400,7 @@ int proc_pid_readdir(struct file *file, struct dir_context *ctx)
  * used for the node /proc/<pid>/task/<tid>/comm.
  * It bypasses generic permission checks in the case where a task of the same
  * task group attempts to access the node.
- * The rational behind this is that glibc and bionic access this node for
+ * The rationale behind this is that glibc and bionic access this node for
  * cross thread naming (pthread_set/getname_np(!self)). However, if
  * PR_SET_DUMPABLE gets set to 0 this node among others becomes uid=0 gid=0,
  * which locks out the cross thread naming implementation.

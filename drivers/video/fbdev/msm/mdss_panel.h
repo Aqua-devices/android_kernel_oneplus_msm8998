@@ -305,11 +305,39 @@ enum mdss_intf_events {
 	MDSS_EVENT_DEEP_COLOR,
 	MDSS_EVENT_DISABLE_PANEL,
 	MDSS_EVENT_UPDATE_PANEL_PPM,
+
+	MDSS_EVENT_PANEL_SET_ACL,
+	MDSS_EVENT_PANEL_GET_ACL,
+	//#endif
+	MDSS_EVENT_PANEL_SET_HBM_MODE,
+	MDSS_EVENT_PANEL_GET_HBM_MODE,
+	//#endif
+	MDSS_EVENT_PANEL_SET_SRGB_MODE,
+	MDSS_EVENT_PANEL_GET_SRGB_MODE,
+	//#endif
+	MDSS_EVENT_PANEL_SET_ADOBE_RGB_MODE,
+	MDSS_EVENT_PANEL_GET_ADOBE_RGB_MODE,
+	//#endif
+	MDSS_EVENT_PANEL_SET_DCI_P3_MODE,
+	MDSS_EVENT_PANEL_GET_DCI_P3_MODE,
+	//#endif
+	MDSS_EVENT_PANEL_SET_NIGHT_MODE,
+	MDSS_EVENT_PANEL_GET_NIGHT_MODE,
+	MDSS_EVENT_PANEL_SET_ONEPLUS_MODE,
+	MDSS_EVENT_PANEL_GET_ONEPLUS_MODE,
+	MDSS_EVENT_PANEL_SET_ADAPTION_MODE,
+	MDSS_EVENT_PANEL_GET_ADAPTION_MODE,
+
+	//#endif
+	MDSS_EVENT_PANEL_SET_READING_MODE,
+	MDSS_EVENT_PANEL_GET_READING_MODE,
+	//#endif
+	MDSS_EVENT_PANEL_GET_SERIAL_NUM,
+	//#endif
 	MDSS_EVENT_DSI_TIMING_DB_CTRL,
 	MDSS_EVENT_AVR_MODE,
 	MDSS_EVENT_REGISTER_CLAMP_HANDLER,
 	MDSS_EVENT_MAX,
-	MDSS_EVENT_UPDATE_LIVEDISPLAY,
 };
 
 /**
@@ -760,8 +788,6 @@ struct mdss_dsi_dual_pu_roi {
 	bool enabled;
 };
 
-struct mdss_livedisplay_ctx;
-
 struct mdss_panel_hdr_properties {
 	bool hdr_enabled;
 
@@ -917,8 +943,6 @@ struct mdss_panel_info {
 	 */
 	u32 adjust_timer_delay_ms;
 
-	struct mdss_livedisplay_ctx *livedisplay;
-
 	/* debugfs structure for the panel */
 	struct mdss_panel_debugfs_info *debugfs_info;
 
@@ -934,7 +958,7 @@ struct mdss_panel_info {
 	/* esc clk recommended for the panel */
 	u32 esc_clk_rate_hz;
 
-#ifdef CONFIG_VENDOR_ONEPLUS
+#ifdef CONFIG_CUSTOM_ROM
 	u32 panel_type;
 #endif
 };

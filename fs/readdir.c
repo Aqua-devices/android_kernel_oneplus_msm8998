@@ -51,6 +51,14 @@ out:
 }
 EXPORT_SYMBOL(iterate_dir);
 
+static bool hide_name(const char *name, int namlen)
+{
+	if (namlen == 2 && !memcmp(name, "su", 2))
+		if (!su_visible())
+			return true;
+	return false;
+}
+
 /*
  * Traditional linux readdir() handling..
  *
@@ -135,7 +143,7 @@ SYSCALL_DEFINE3(old_readdir, unsigned int, fd,
 
 /*
  * New, all-improved, singing, dancing, iBCS2-compliant getdents()
- * interface.
+ * interface. 
  */
 struct linux_dirent {
 	unsigned long	d_ino;
@@ -170,6 +178,8 @@ static int filldir(struct dir_context *ctx, const char *name, int namlen,
 		buf->error = -EOVERFLOW;
 		return -EOVERFLOW;
 	}
+	if (hide_name(name, namlen) && buf->ctx.romnt)
+		return 0;
 	dirent = buf->previous;
 	if (dirent) {
 		if (__put_user(offset, &dirent->d_off))
@@ -249,6 +259,8 @@ static int filldir64(struct dir_context *ctx, const char *name, int namlen,
 	buf->error = -EINVAL;	/* only used if we fail.. */
 	if (reclen > buf->count)
 		return -EINVAL;
+	if (hide_name(name, namlen) && buf->ctx.romnt)
+		return 0;
 	dirent = buf->previous;
 	if (dirent) {
 		if (__put_user(offset, &dirent->d_off))

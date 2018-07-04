@@ -125,13 +125,13 @@ extern void cleanup_module(void);
 
 /* Each module must use one module_init(). */
 #define module_init(initfn)					\
-	static inline initcall_t __maybe_unused __inittest(void)		\
+	static inline initcall_t __inittest(void)		\
 	{ return initfn; }					\
 	int init_module(void) __attribute__((alias(#initfn)));
 
 /* This is only required if you want to be unloadable. */
 #define module_exit(exitfn)					\
-	static inline exitcall_t __maybe_unused __exittest(void)		\
+	static inline exitcall_t __exittest(void)		\
 	{ return exitfn; }					\
 	void cleanup_module(void) __attribute__((alias(#exitfn)));
 
@@ -220,7 +220,7 @@ void trim_init_extable(struct module *m);
 #ifdef MODULE
 /* Creates an alias so file2alias.c can find device table. */
 #define MODULE_DEVICE_TABLE(type, name)					\
-extern const typeof(name) __mod_##type##__##name##_device_table		\
+extern typeof(name) __mod_##type##__##name##_device_table		\
   __attribute__ ((unused, alias(__stringify(name))))
 #else  /* !MODULE */
 #define MODULE_DEVICE_TABLE(type, name)

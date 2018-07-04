@@ -25,9 +25,12 @@
 #include <linux/slab.h>
 #include <linux/dmapool.h>
 #include <linux/dma-mapping.h>
-
+#include <linux/moduleparam.h>
 #include "xhci.h"
 #include "xhci-trace.h"
+static bool usb2_lpm_disable = 1;
+module_param(usb2_lpm_disable, bool, S_IRUGO | S_IWUSR);
+MODULE_PARM_DESC(usb2_lpm_disable, "DISABLE USB2 LPM");
 
 /*
  * Allocates a generic ring segment from the ring pool, sets the dma address,
@@ -960,6 +963,8 @@ void xhci_free_virt_device(struct xhci_hcd *xhci, int slot_id)
 	if (dev->out_ctx)
 		xhci_free_container_ctx(xhci, dev->out_ctx);
 
+	if (dev->udev && dev->udev->slot_id)
+		dev->udev->slot_id = 0;
 	kfree(xhci->devs[slot_id]);
 	xhci->devs[slot_id] = NULL;
 }
@@ -2304,9 +2309,11 @@ static void xhci_add_in_port(struct xhci_hcd *xhci, unsigned int num_ports,
 		xhci_dbg_trace(xhci, trace_xhci_dbg_init,
 				"xHCI 1.0: support USB2 software lpm");
 		xhci->sw_lpm_support = 1;
-		if (temp & XHCI_HLC) {
+	//	if (temp & XHCI_HLC) {
+		if (!usb2_lpm_disable && (temp & XHCI_HLC)) {
 			xhci_dbg_trace(xhci, trace_xhci_dbg_init,
 					"xHCI 1.0: support USB2 hardware lpm");
+			xhci_err(xhci, "xHCI 1.0: support USB2 hardware lpm");
 			xhci->hw_lpm_support = 1;
 		}
 	}

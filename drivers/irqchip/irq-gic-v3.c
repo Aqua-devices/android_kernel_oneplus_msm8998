@@ -37,6 +37,7 @@
 #include <asm/virt.h>
 
 #include "irq-gic-common.h"
+#include <linux/wakeup_reason.h>
 
 struct redist_region {
 	void __iomem		*redist_base;
@@ -441,7 +442,7 @@ static void gic_show_resume_irq(struct gic_chip_data *gic)
 			name = "stray irq";
 		else if (desc->action && desc->action->name)
 			name = desc->action->name;
-
+		log_wakeup_reason(irq);
 		pr_warn("%s: %d triggered %s\n", __func__, irq, name);
 	}
 }
@@ -750,7 +751,7 @@ static void gic_send_sgi(u64 cluster_id, u16 tlist, unsigned int irq)
 	       MPIDR_TO_SGI_AFFINITY(cluster_id, 1)	|
 	       tlist << ICC_SGI1R_TARGET_LIST_SHIFT);
 
-	pr_debug("CPU%d: ICC_SGI1R_EL1 %llx\n", smp_processor_id(), val);
+	pr_devel("CPU%d: ICC_SGI1R_EL1 %llx\n", smp_processor_id(), val);
 	gic_write_sgi1r(val);
 }
 

@@ -35,7 +35,6 @@
 #define MAX_PATHS	2
 #define DBL_BUF		2
 
-#ifdef CONFIG_VENDOR_ONEPLUS
 #include <linux/pm_qos.h>
 struct qos_request_v {
 	int max_state;
@@ -49,7 +48,6 @@ static struct qos_request_v qos_request_value = {
 	.max_devfreq = INT_MAX,
 	.min_devfreq = 0,
 };
-#endif
 
 struct dev_data {
 	struct msm_bus_vectors vectors[MAX_PATHS * DBL_BUF];
@@ -122,7 +120,6 @@ static void find_freq(struct devfreq_dev_profile *p, unsigned long *freq,
 		*freq = atleast;
 }
 
-#ifdef CONFIG_VENDOR_ONEPLUS
 static void find_freq_cpubw(struct devfreq_dev_profile *p, unsigned long *freq,
                         u32 flags)
 {
@@ -169,7 +166,6 @@ static int devbw_target_cpubw(struct device *dev, unsigned long *freq, u32 flags
 	else
 		return set_bw(dev, *freq, d->gov_ab);
 }
-#endif
 
 static int devbw_target(struct device *dev, unsigned long *freq, u32 flags)
 {
@@ -192,7 +188,6 @@ static int devbw_get_dev_status(struct device *dev,
 	return 0;
 }
 
-#ifdef CONFIG_VENDOR_ONEPLUS
 static int devfreq_qos_handler(struct notifier_block *b, unsigned long val, void *v)
 {
 	unsigned int max_devfreq_index, min_devfreq_index;
@@ -229,7 +224,6 @@ static int devfreq_qos_handler(struct notifier_block *b, unsigned long val, void
 static struct notifier_block devfreq_qos_notifier = {
         .notifier_call = devfreq_qos_handler,
 };
-#endif
 
 #define PROP_PORTS "qcom,src-dst-ports"
 #define PROP_TBL "qcom,bw-tbl"
@@ -286,15 +280,11 @@ int devfreq_add_devbw(struct device *dev)
 
 	p = &d->dp;
 	p->polling_ms = 50;
-#ifdef CONFIG_VENDOR_ONEPLUS
 	if (strstr(d->bw_data.name, "soc:qcom,cpubw") != NULL) {
 		p->target = devbw_target_cpubw;
 		cpubw_flag = true;
 	} else
 		p->target = devbw_target;
-#else
-	p->target = devbw_target;
-#endif
 	p->get_dev_status = devbw_get_dev_status;
 
 	if (of_find_property(dev->of_node, PROP_TBL, &len)) {
@@ -343,13 +333,11 @@ int devfreq_add_devbw(struct device *dev)
 		return PTR_ERR(d->df);
 	}
 
-#ifdef CONFIG_VENDOR_ONEPLUS
 	if (cpubw_flag) {
 		qos_request_value.max_state = len;
 		qos_request_value.min_devfreq = 0;
 		qos_request_value.max_devfreq = len;
 	}
-#endif
 	return 0;
 }
 
@@ -400,12 +388,10 @@ static struct platform_driver devbw_driver = {
 
 static int __init devbw_init(void)
 {
-#ifdef CONFIG_VENDOR_ONEPLUS
 	/* add cpufreq qos notify */
 	cpubw_flag = false;
 	pm_qos_add_notifier(PM_QOS_DEVFREQ_MAX, &devfreq_qos_notifier);
 	pm_qos_add_notifier(PM_QOS_DEVFREQ_MIN, &devfreq_qos_notifier);
-#endif
 	platform_driver_register(&devbw_driver);
 	return 0;
 }

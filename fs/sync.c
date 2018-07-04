@@ -19,7 +19,7 @@
 #include "internal.h"
 
 bool fsync_enabled = true;
-module_param(fsync_enabled, bool, 0755);
+module_param(fsync_enabled, bool, 0644);
 
 #define VALID_FLAGS (SYNC_FILE_RANGE_WAIT_BEFORE|SYNC_FILE_RANGE_WRITE| \
 			SYNC_FILE_RANGE_WAIT_AFTER)
@@ -218,7 +218,7 @@ int vfs_fsync(struct file *file, int datasync)
 {
 	if (!fsync_enabled)
 		return 0;
-		
+
 	return vfs_fsync_range(file, 0, LLONG_MAX, datasync);
 }
 EXPORT_SYMBOL(vfs_fsync);
@@ -227,7 +227,7 @@ static int do_fsync(unsigned int fd, int datasync)
 {
 	struct fd f = fdget(fd);
 	int ret = -EBADF;
-	
+
 	if (!fsync_enabled)
 		return 0;
 
@@ -251,7 +251,7 @@ SYSCALL_DEFINE1(fdatasync, unsigned int, fd)
 {
 	if (!fsync_enabled)
 		return 0;
-		
+
 	return do_fsync(fd, 1);
 }
 

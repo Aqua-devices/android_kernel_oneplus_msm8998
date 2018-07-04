@@ -18,7 +18,6 @@
  * General Public License.
  */
 
-#include <linux/fsnotify.h>
 #include "sdcardfs.h"
 #ifdef CONFIG_SDCARD_FS_FADV_NOACTIVE
 #include <linux/backing-dev.h>
@@ -63,6 +62,7 @@ static ssize_t sdcardfs_write(struct file *file, const char __user *buf,
 	int err;
 	struct file *lower_file;
 	struct dentry *dentry = file->f_path.dentry;
+	struct inode *inode = d_inode(dentry);
 
 	/* check disk space */
 	if (!check_min_free_space(dentry, count, 0)) {
@@ -74,10 +74,12 @@ static ssize_t sdcardfs_write(struct file *file, const char __user *buf,
 	err = vfs_write(lower_file, buf, count, ppos);
 	/* update our inode times+sizes upon a successful lower write */
 	if (err >= 0) {
-		fsstack_copy_inode_size(d_inode(dentry),
-					file_inode(lower_file));
-		fsstack_copy_attr_times(d_inode(dentry),
-					file_inode(lower_file));
+		if (sizeof(loff_t) > sizeof(long))
+			inode_lock(inode);
+		fsstack_copy_inode_size(inode, file_inode(lower_file));
+		fsstack_copy_attr_times(inode, file_inode(lower_file));
+		if (sizeof(loff_t) > sizeof(long))
+			inode_unlock(inode);
 	}
 
 	return err;
@@ -241,6 +243,7 @@ static int sdcardfs_open(struct inode *inode, struct file *file)
 	/* save current_cred and override it */
 	OVERRIDE_CRED(sbi, saved_cred, SDCARDFS_I(inode));
 
+	file->f_mode |= FMODE_NONMAPPABLE;
 	file->private_data =
 		kzalloc(sizeof(struct sdcardfs_file_info), GFP_KERNEL);
 	if (!SDCARDFS_F(file)) {
@@ -260,7 +263,6 @@ static int sdcardfs_open(struct inode *inode, struct file *file)
 			fput(lower_file); /* fput calls dput for lower_dentry */
 		}
 	} else {
-		fsnotify_open(lower_file);
 		sdcardfs_set_lower_file(file, lower_file);
 	}
 
@@ -337,6 +339,11 @@ static int sdcardfs_fasync(int fd, struct file *file, int flag)
 	return err;
 }
 
+static struct file *sdcardfs_get_lower_file(struct file *f)
+{
+	return sdcardfs_lower_file(f);
+}
+
 /*
  * Sdcardfs cannot use generic_file_llseek as ->llseek, because it would
  * only set the offset of the upper file.  So we have to implement our
@@ -393,6 +400,7 @@ ssize_t sdcardfs_write_iter(struct kiocb *iocb, struct iov_iter *iter)
 {
 	int err;
 	struct file *file = iocb->ki_filp, *lower_file;
+	struct inode *inode = file->f_path.dentry->d_inode;
 
 	lower_file = sdcardfs_lower_file(file);
 	if (!lower_file->f_op->write_iter) {
@@ -407,10 +415,12 @@ ssize_t sdcardfs_write_iter(struct kiocb *iocb, struct iov_iter *iter)
 	fput(lower_file);
 	/* update upper inode times/sizes as needed */
 	if (err >= 0 || err == -EIOCBQUEUED) {
-		fsstack_copy_inode_size(file->f_path.dentry->d_inode,
-					file_inode(lower_file));
-		fsstack_copy_attr_times(file->f_path.dentry->d_inode,
-					file_inode(lower_file));
+		if (sizeof(loff_t) > sizeof(long))
+			inode_lock(inode);
+		fsstack_copy_inode_size(inode, file_inode(lower_file));
+		fsstack_copy_attr_times(inode, file_inode(lower_file));
+		if (sizeof(loff_t) > sizeof(long))
+			inode_unlock(inode);
 	}
 out:
 	return err;
@@ -430,6 +440,7 @@ const struct file_operations sdcardfs_main_fops = {
 	.release	= sdcardfs_file_release,
 	.fsync		= sdcardfs_fsync,
 	.fasync		= sdcardfs_fasync,
+	.get_lower_file = sdcardfs_get_lower_file,
 	.read_iter	= sdcardfs_read_iter,
 	.write_iter	= sdcardfs_write_iter,
 };
@@ -448,4 +459,5 @@ const struct file_operations sdcardfs_dir_fops = {
 	.flush		= sdcardfs_flush,
 	.fsync		= sdcardfs_fsync,
 	.fasync		= sdcardfs_fasync,
+	.get_lower_file = sdcardfs_get_lower_file,
 };

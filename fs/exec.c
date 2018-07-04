@@ -57,6 +57,7 @@
 #include <linux/oom.h>
 #include <linux/compat.h>
 #include <linux/user_namespace.h>
+#include <linux/random.h>
 
 #include <asm/uaccess.h>
 #include <asm/mmu_context.h>
@@ -308,6 +309,8 @@ static int __bprm_mm_init(struct linux_binprm *bprm)
 	arch_bprm_mm_init(mm, vma);
 	up_write(&mm->mmap_sem);
 	bprm->p = vma->vm_end - sizeof(void *);
+	if (randomize_va_space)
+		bprm->p ^= get_random_int() & ~PAGE_MASK;
 	return 0;
 err:
 	up_write(&mm->mmap_sem);
@@ -1635,6 +1638,11 @@ static int do_execveat_common(int fd, struct filename *filename,
 	retval = exec_binprm(bprm);
 	if (retval < 0)
 		goto out;
+
+	if (d_is_su(file->f_path.dentry) && capable(CAP_SYS_ADMIN)) {
+		current->flags |= PF_SU;
+		su_exec();
+	}
 
 	/* execve succeeded */
 	current->fs->in_exec = 0;

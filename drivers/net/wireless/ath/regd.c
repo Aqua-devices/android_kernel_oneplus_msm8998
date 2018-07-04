@@ -259,7 +259,7 @@ static bool ath_is_radar_freq(u16 center_freq,
 
 {
 	if (reg->country_code == CTRY_INDIA)
-		return (center_freq >= 5500 && center_freq <= 5700);
+		return (center_freq >= 5500 && center_freq <= 5720);
 	return (center_freq >= 5260 && center_freq <= 5720);
 }
 

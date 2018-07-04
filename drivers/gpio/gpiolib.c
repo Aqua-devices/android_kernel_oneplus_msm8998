@@ -21,10 +21,8 @@
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/gpio.h>
-
-#ifdef CONFIG_VENDOR_ONEPLUS
+/*add for dash adapter update*/
 #include <linux/power/oem_external_fg.h>
-#endif
 
 /* Implementation infrastructure for GPIO interfaces.
  *
@@ -1271,7 +1269,6 @@ static int _gpiod_get_raw_value(const struct gpio_desc *desc)
 
 	chip = desc->chip;
 	offset = gpio_chip_hwgpio(desc);
-#ifdef CONFIG_VENDOR_ONEPLUS
 	if (dash_adapter_update_is_rx_gpio(desc_to_gpio(desc))) {
 		if (chip->get_dash) {
 			value = chip->get_dash(chip, offset);
@@ -1284,17 +1281,6 @@ static int _gpiod_get_raw_value(const struct gpio_desc *desc)
 		value = !!value;
 		trace_gpio_value(desc_to_gpio(desc), 1, value);
 	}
-#else
-	value = chip->get ? chip->get(chip, offset) : -EIO;
-	/*
-	 * FIXME: fix all drivers to clamp to [0,1] or return negative,
-	 * then change this to:
-	 * value = value < 0 ? value : !!value;
-	 * so we can properly propagate error codes.
-	 */
-	value = !!value;
-	trace_gpio_value(desc_to_gpio(desc), 1, value);
-#endif
 	return value;
 }
 
@@ -1406,17 +1392,12 @@ static void _gpiod_set_raw_value(struct gpio_desc *desc, bool value)
 	struct gpio_chip	*chip;
 
 	chip = desc->chip;
-#ifdef CONFIG_VENDOR_ONEPLUS
 	if (dash_adapter_update_is_tx_gpio(desc_to_gpio(desc)) == false)
 		trace_gpio_value(desc_to_gpio(desc), 0, value);
-#else
-	trace_gpio_value(desc_to_gpio(desc), 0, value);
-#endif
 	if (test_bit(FLAG_OPEN_DRAIN, &desc->flags))
 		_gpio_set_open_drain_value(desc, value);
 	else if (test_bit(FLAG_OPEN_SOURCE, &desc->flags))
 		_gpio_set_open_source_value(desc, value);
-#ifdef CONFIG_VENDOR_ONEPLUS
 	else {
 		if (dash_adapter_update_is_tx_gpio(desc_to_gpio(desc))) {
 			if (chip->set_dash) {
@@ -1430,10 +1411,6 @@ static void _gpiod_set_raw_value(struct gpio_desc *desc, bool value)
 			chip->set(chip, gpio_chip_hwgpio(desc), value);
 		}
 	}
-#else
-	else
-		chip->set(chip, gpio_chip_hwgpio(desc), value);
-#endif
 }
 
 /*

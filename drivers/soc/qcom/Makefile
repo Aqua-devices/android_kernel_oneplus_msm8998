@@ -49,11 +49,7 @@ ifdef CONFIG_MSM_SUBSYSTEM_RESTART
 	obj-y += ramdump.o
 endif
 
-ifdef CONFIG_VENDOR_ONEPLUS
-obj-$(CONFIG_QPNP_HAPTIC) += qpnp-haptic_oem.o
-else
 obj-$(CONFIG_QPNP_HAPTIC) += qpnp-haptic.o
-endif
 obj-$(CONFIG_QCOM_GSBI)	+=	qcom_gsbi.o
 obj-$(CONFIG_QCOM_CPUSS_DUMP) += cpuss_dump.o
 obj-$(CONFIG_QPNP_PBS) += qpnp-pbs.o
@@ -108,10 +104,11 @@ obj-$(CONFIG_MSM_RPM_LOG) += rpm_log.o
 obj-$(CONFIG_QSEE_IPC_IRQ_BRIDGE) += qsee_ipc_irq_bridge.o
 obj-$(CONFIG_WCD_DSP_GLINK) += wcd-dsp-glink.o
 obj-$(CONFIG_QCOM_SMCINVOKE) += smcinvoke.o
+obj-y += project_info.o
+obj-$(CONFIG_RF_CABLE_DETECT) += op_rf_cable_monitor.o
 obj-$(CONFIG_QCOM_EARLY_RANDOM)	+= early_random.o
 obj-$(CONFIG_QCOM_CX_IPEAK) += cx_ipeak.o
 obj-$(CONFIG_MSM_CACHE_M4M_ERP64) += cache_m4m_erp64.o
-obj-$(CONFIG_ONEPLUS_PROJECT_INFO) += project_info.o
 obj-$(CONFIG_STATE_NOTIFIER) += state_notifier.o
 
 # TODO: remove me b/62058353

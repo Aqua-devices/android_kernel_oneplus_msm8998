@@ -2873,10 +2873,6 @@ static void dwc3_gadget_reset_interrupt(struct dwc3 *dwc)
 
 	dwc3_usb3_phy_suspend(dwc, false);
 
-#ifndef CONFIG_VENDOR_ONEPLUS
-	usb_gadget_vbus_draw(&dwc->gadget, 100);
-#endif
-
 	dwc3_reset_gadget(dwc);
 	dbg_event(0xFF, "BUS RST", 0);
 

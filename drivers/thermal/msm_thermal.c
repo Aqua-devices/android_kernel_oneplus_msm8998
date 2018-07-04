@@ -3622,9 +3622,6 @@ static void check_temp(struct work_struct *work)
 	int temp = 0;
 	int ret = 0;
 
-	if (!msm_thermal_probed)
-		return;
-
 	do_therm_reset();
 
 	ret = therm_get_temp(msm_thermal_info.sensor_id, THERM_TSENS_ID, &temp);
@@ -6334,7 +6331,7 @@ static int fetch_cpu_mitigaiton_info(struct msm_thermal_data *data,
 			goto fetch_mitig_exit;
 		}
 		strlcpy((char *) cpus[_cpu].sensor_type, sensor_name,
-			strlen((char *) cpus[_cpu].sensor_type) + 1);
+			strlen(sensor_name) + 1);
 		create_alias_name(_cpu, limits, pdev);
 	}
 

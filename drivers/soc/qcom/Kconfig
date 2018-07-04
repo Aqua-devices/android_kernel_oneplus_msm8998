@@ -711,13 +711,6 @@ config MSM_PERFORMANCE_HOTPLUG_ON
 	 functionality of hot plugging cores through msm_performance if there is
 	 no default core-control driver available.
 
-config MSM_PERFORMANCE_CPUFREQ_LIMITS_VOTING_ONLY
-	bool "Restrict msm_performance driver to cpufreq limits voting only"
-	depends on MSM_PERFORMANCE
-	help
-	 Setting this flag to true will restrict msm_performance driver's
-	 capabilities to setting min/max CPU frequencies only.
-
 endif # ARCH_QCOM
 
 config MSM_SUBSYSTEM_RESTART
@@ -921,6 +914,14 @@ config QCOM_EARLY_RANDOM
 	  may not be truly random. Select this option to make an early call
 	  to get some random data to put in the pool. If unsure, say N.
 
+config RF_CABLE_DETECT
+	bool "detect RF cable connection"
+	help
+	  detect RF cable connection for different RF configuration
+	  To compile this driver as a module, choose M here: the module
+	  will be called RF cable.
+	  If unsure, say N.
+
 config QCOM_CX_IPEAK
 	bool "Common driver to handle Cx iPeak limitation"
 	help
@@ -953,12 +954,6 @@ config MSM_CACHE_M4M_ERP64_PANIC_ON_UE
        help
          Say 'Y' here to cause kernel panic when uncorrectable cache/M4M errors
          are detected.
-
-config ONEPLUS_PROJECT_INFO
-	bool "Enable OnePlus Project Info"
-	default y
-	help
-	  Used by various OnePlus drivers, disable this and you will have a hard time.
 
 config STATE_NOTIFIER
     bool "State Notifier"

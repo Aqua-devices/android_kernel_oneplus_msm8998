@@ -30,24 +30,21 @@
 #include <linux/syscore_ops.h>
 #include <linux/reboot.h>
 #include <linux/irqchip/msm-mpm-irq.h>
+#include <linux/suspend.h>
 #include "../core.h"
 #include "../pinconf.h"
 #include "pinctrl-msm.h"
 #include "../pinctrl-utils.h"
-#ifdef CONFIG_VENDOR_ONEPLUS
+#include <linux/sched.h>
 #include <linux/wakeup_reason.h>
 #include <linux/cpufreq.h>
-#include <linux/suspend.h>
-#endif
 
 #define MAX_NR_GPIO 300
 #define PS_HOLD_OFFSET 0x820
 
-#ifdef CONFIG_VENDOR_ONEPLUS
+static int resume_wakeup_flag = 0;
 bool need_show_pinctrl_irq;
 bool fp_irq_cnt;
-#endif
-
 /**
  * struct msm_pinctrl - state for a pinctrl-msm device
  * @dev:            device handle.
@@ -450,7 +447,7 @@ static int msm_gpio_get(struct gpio_chip *chip, unsigned offset)
 	return !!(val & BIT(g->in_bit));
 }
 
-#ifdef CONFIG_VENDOR_ONEPLUS
+/*2017-08-22 add for dash adapter update*/
 static int msm_gpio_get_dash(struct gpio_chip *chip, unsigned offset)
 {
 	const struct msm_pingroup *g;
@@ -464,7 +461,6 @@ static int msm_gpio_get_dash(struct gpio_chip *chip, unsigned offset)
 	val = readl_dash(pctrl->regs + g->io_reg);
 	return !!(val & BIT(g->in_bit));
 }
-#endif
 
 static void msm_gpio_set(struct gpio_chip *chip, unsigned offset, int value)
 {
@@ -487,7 +483,7 @@ static void msm_gpio_set(struct gpio_chip *chip, unsigned offset, int value)
 	spin_unlock_irqrestore(&pctrl->lock, flags);
 }
 
-#ifdef CONFIG_VENDOR_ONEPLUS
+/*2017-08-22 add for dash adapter update*/
 static void msm_gpio_set_dash(struct gpio_chip *chip,
 			unsigned offset, int value)
 {
@@ -508,7 +504,6 @@ static void msm_gpio_set_dash(struct gpio_chip *chip,
 
 	/*spin_unlock_irqrestore(&pctrl->lock, flags);*/
 }
-#endif
 
 #ifdef CONFIG_DEBUG_FS
 #include <linux/seq_file.h>
@@ -542,11 +537,9 @@ static void msm_gpio_dbg_show_one(struct seq_file *s,
 	drive = (ctl_reg >> g->drv_bit) & 7;
 	pull = (ctl_reg >> g->pull_bit) & 3;
 
-	seq_printf(s, " %-8s: %-3s %d", g->name, is_out ? "out" : "in", func);
-#ifdef CONFIG_VENDOR_ONEPLUS
-	if (gpio <= 149)
+	seq_printf(s, " %-8s: %-3s fun%d", g->name, is_out ? "out" : "in", func);
+	if (gpio <= 149)//the ship real gpio
 		seq_printf(s, " %s", chip->get(chip, offset) ? "hi":"lo");
-#endif
 	seq_printf(s, " %dmA", msm_regval_to_drive(drive));
 	seq_printf(s, " %s", pulls[pull]);
 }
@@ -557,13 +550,11 @@ static void msm_gpio_dbg_show(struct seq_file *s, struct gpio_chip *chip)
 	unsigned i;
 
 	for (i = 0; i < chip->ngpio; i++, gpio++) {
-#ifdef CONFIG_VENDOR_ONEPLUS
 		if (gpio == 0 || gpio == 1 ||
 		gpio == 2 || gpio == 3 ||
 		gpio == 81 || gpio == 82 ||
 		gpio == 83 || gpio == 84)
 			continue;
-#endif
 		msm_gpio_dbg_show_one(s, NULL, chip, i, gpio);
 		seq_puts(s, "\n");
 	}
@@ -577,13 +568,11 @@ static struct gpio_chip msm_gpio_template = {
 	.direction_input  = msm_gpio_direction_input,
 	.direction_output = msm_gpio_direction_output,
 	.get              = msm_gpio_get,
-#ifdef CONFIG_VENDOR_ONEPLUS
+/*2017-08-22 add for dash adapter update*/
 	.get_dash	  = msm_gpio_get_dash,
-#endif
 	.set              = msm_gpio_set,
-#ifdef CONFIG_VENDOR_ONEPLUS
+/*2017-08-22 add for dash adapter update*/
 	.set_dash	  = msm_gpio_set_dash,
-#endif
 	.request          = gpiochip_generic_request,
 	.free             = gpiochip_generic_free,
 	.dbg_show         = msm_gpio_dbg_show,
@@ -832,6 +821,38 @@ static struct irq_chip msm_gpio_irq_chip = {
 	.irq_set_wake   = msm_gpio_irq_set_wake,
 };
 
+static void init_resume_wakeup_flag(void)
+{
+        resume_wakeup_flag = 0;
+}
+
+static int is_speedup_irq(struct irq_desc *desc, char *irq_name)
+{
+        return strstr(desc->action->name, irq_name) != NULL;
+}
+
+static void set_resume_wakeup_flag(int irq)
+{
+        struct irq_desc *desc;
+        desc = irq_to_desc(irq);
+
+        if (desc && desc->action && desc->action->name) {
+                if (is_speedup_irq(desc, "synaptics,s3320"))
+                        resume_wakeup_flag = 1;
+        }
+}
+
+int get_resume_wakeup_flag(void)
+{
+        int flag = resume_wakeup_flag;
+
+        pr_debug("%s: flag = %d\n", __func__, flag);
+        /* Clear it for next calling */
+        init_resume_wakeup_flag();
+
+        return flag;
+}
+
 static void msm_gpio_irq_handler(struct irq_desc *desc)
 {
 	struct gpio_chip *gc = irq_desc_get_handler_data(desc);
@@ -842,12 +863,11 @@ static void msm_gpio_irq_handler(struct irq_desc *desc)
 	int handled = 0;
 	u32 val;
 	int i;
-#ifdef CONFIG_VENDOR_ONEPLUS
 	char irq_name[16] = {0};
-#endif
 
 	chained_irq_enter(chip, desc);
 
+        init_resume_wakeup_flag();
 	/*
 	 * Each pin has it's own IRQ status register, so use
 	 * enabled_irq bitmap to limit the number of reads.
@@ -859,22 +879,25 @@ static void msm_gpio_irq_handler(struct irq_desc *desc)
 			irq_pin = irq_find_mapping(gc->irqdomain, i);
 			generic_handle_irq(irq_pin);
 			handled++;
-#ifdef CONFIG_VENDOR_ONEPLUS
+			/* ++add by lyb@bsp for printk wakeup irqs */
 			if (!!need_show_pinctrl_irq) {
 				need_show_pinctrl_irq = false;
+				set_resume_wakeup_flag(irq_pin);
 				strlcpy(irq_name,
 				irq_to_desc(irq_pin)->action->name, 16);
 				if (strnstr(irq_name,
 					"soc:fpc_fpc1020", 16) != NULL ||
 					strnstr(irq_name, "gf_fp", 6) != NULL) {
 					fp_irq_cnt = true;
+#ifdef CONFIG_CPU_FREQ_ONEPLUS_QOS
 					c0_cpufreq_limit_queue();
+#endif
 				}
 				pr_warn("hwirq %s [irq_num=%d ]triggered\n",
 				irq_to_desc(irq_pin)->action->name, irq_pin);
 				log_wakeup_reason(irq_pin);
 			}
-#endif
+			/* -- */
 		}
 	}
 
@@ -984,7 +1007,6 @@ static void msm_pinctrl_setup_pm_reset(struct msm_pinctrl *pctrl)
 		}
 }
 
-#ifdef CONFIG_VENDOR_ONEPLUS
 static int pm_pm_event(struct notifier_block *notifier,
 		unsigned long pm_event, void *unused)
 {
@@ -1004,7 +1026,6 @@ static int pm_pm_event(struct notifier_block *notifier,
 static struct notifier_block pinctrl_pm_notifier_block = {
 	.notifier_call = pm_pm_event,
 };
-#endif
 
 #ifdef CONFIG_PM
 static int msm_pinctrl_suspend(void)
@@ -1058,14 +1079,10 @@ int msm_pinctrl_probe(struct platform_device *pdev,
 	struct msm_pinctrl *pctrl;
 	struct resource *res;
 	int ret;
-
-#ifdef CONFIG_VENDOR_ONEPLUS
 	ret = register_pm_notifier(&pinctrl_pm_notifier_block);
 	if (ret)
 		pr_warn("[%s] failed to register PM notifier %d\n",
 				__func__, ret);
-#endif
-
 	msm_pinctrl_data = pctrl = devm_kzalloc(&pdev->dev,
 				sizeof(*pctrl), GFP_KERNEL);
 	if (!pctrl) {
@@ -1122,10 +1139,7 @@ int msm_pinctrl_remove(struct platform_device *pdev)
 	gpiochip_remove(&pctrl->chip);
 	pinctrl_unregister(pctrl->pctrl);
 
-#ifdef CONFIG_VENDOR_ONEPLUS
 	unregister_pm_notifier(&pinctrl_pm_notifier_block);
-#endif
-
 	unregister_restart_handler(&pctrl->restart_nb);
 	unregister_syscore_ops(&msm_pinctrl_pm_ops);
 
